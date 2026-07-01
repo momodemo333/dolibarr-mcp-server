@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+.mcp.json
+vendor/
+composer.lock
+.phpunit.cache/
+build/
+dist/
+coverage/
+*.log
+*.cache
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "dolibarr": {
+      "command": "php8.1",
+      "args": ["bin/server.php"],
+      "env": {
+        "DOLIBARR_URL": "https://your-dolibarr-instance.com",
+        "DOLIBARR_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}

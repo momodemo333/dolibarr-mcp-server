@@ -1,0 +1,25 @@
+{
+    "name": "momodemo333/dolibarr-mcp-server",
+    "description": "MCP Server for Dolibarr ERP integration",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": "^8.1",
+        "ext-fileinfo": "*",
+        "php-mcp/server": "^3.3",
+        "guzzlehttp/guzzle": "^7.10"
+    },
+    "autoload": {
+        "psr-4": {
+            "DolibarrMcp\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "DolibarrMcp\\Tests\\": "tests/"
+        }
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.5"
+    }
+}
