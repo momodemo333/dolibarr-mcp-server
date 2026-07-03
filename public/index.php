@@ -4,14 +4,28 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
-// Accept Dolibarr credentials via HTTP headers (sent by DalfredAgent)
-// These override .env values, allowing per-user API keys.
-$headers = getallheaders();
-if (!empty($headers['X-Dolibarr-Url'])) {
-    putenv('DOLIBARR_URL=' . $headers['X-Dolibarr-Url']);
-}
-if (!empty($headers['X-Dolibarr-Api-Key'])) {
-    putenv('DOLIBARR_API_KEY=' . $headers['X-Dolibarr-Api-Key']);
-}
+use DolibarrMcp\Bootstrap;
+use DolibarrMcp\Config\ConnectionConfig;
 
-DolibarrMcp\Bootstrap::run('http');
+// Accept Dolibarr credentials via HTTP headers (per-user, request-scoped).
+// Falls back to .env / environment variables when headers are absent.
+$headers = function_exists('getallheaders') ? getallheaders() : [];
+$url = $headers['X-Dolibarr-Url'] ?? '';
+$apiKey = $headers['X-Dolibarr-Api-Key'] ?? '';
+
+$config = ($url !== '' && $apiKey !== '') ? new ConnectionConfig($url, $apiKey) : null;
+
+Bootstrap::loadEnv();
+
+try {
+    Bootstrap::emit(Bootstrap::handleHttpRequest(null, null, $config));
+} catch (\Throwable $e) {
+    // E.g. malformed Mcp-Session-Id (the SDK requires a valid UUID)
+    http_response_code(400);
+    header('Content-Type: application/json');
+    echo json_encode([
+        'jsonrpc' => '2.0',
+        'id' => null,
+        'error' => ['code' => -32600, 'message' => $e->getMessage()],
+    ]);
+}

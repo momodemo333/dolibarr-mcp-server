@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace DolibarrMcp\Tools;
 
 use DolibarrMcp\Client\ApiSchemaClient;
-use PhpMcp\Server\Attributes\McpTool;
-use PhpMcp\Server\Attributes\Schema;
+use Mcp\Capability\Attribute\McpTool;
+use Mcp\Capability\Attribute\Schema;
 
 class ExplorerTools
 {

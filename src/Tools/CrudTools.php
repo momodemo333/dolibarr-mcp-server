@@ -6,8 +6,8 @@ namespace DolibarrMcp\Tools;
 
 use DolibarrMcp\Client\DolibarrClient;
 use DolibarrMcp\Support\FieldMapper;
-use PhpMcp\Server\Attributes\McpTool;
-use PhpMcp\Server\Attributes\Schema;
+use Mcp\Capability\Attribute\McpTool;
+use Mcp\Capability\Attribute\Schema;
 
 class CrudTools
 {

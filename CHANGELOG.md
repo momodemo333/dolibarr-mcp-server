@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.1.0 (unreleased)
+
+- **Migrated from `php-mcp/server` to the official MCP PHP SDK (`mcp/sdk`)** — ReactPHP is gone entirely.
+- The Streamable HTTP transport is now **per-request** (PSR-7, PHP-FPM/Apache friendly): no daemon, no event loop, no port to manage. `Bootstrap::handleHttpRequest()` handles one HTTP request and returns a PSR-7 response; `Bootstrap::emit()` sends it to the SAPI output.
+- HTTP sessions are persisted on disk between requests (`FileSessionStore`), so the `Mcp-Session-Id` handshake works under PHP-FPM.
+- Tool exceptions now surface their message to the LLM as `isError` tool results (`LlmFriendlyReferenceHandler`) instead of an opaque "Error while executing tool" JSON-RPC error.
+- Tool attributes now come from `Mcp\Capability\Attribute` (`McpTool`, `Schema`); signatures are unchanged.
+- stdio entry point (`bin/server.php`) unchanged for MCP clients.
+- **Request-scoped connection config** (`ConnectionConfig`): callers pass the Dolibarr URL + API key explicitly instead of mutating process-global environment variables (unsafe under PHP-FPM worker reuse). Env vars remain a CLI/stdio fallback.
+- **Usage knowledge served as MCP resources**: LLM.md is sliced at read time into five guides (`dolibarr://guide/essentials`, `tools`, `domains`, `workflows`, `fields-and-quirks`) so every MCP client gets the same guidance Dalfred injects in its system prompt. LLM.md stays the single source of truth.
+- **HTTP integration test suite** (`tests/Integration/`): full JSON-RPC flows (initialize/session persistence/tools/resources/error surfacing) exercised in PHPUnit with in-memory PSR-7 requests — no web server needed.
+
 This public repository starts from the Dolibarr MCP Server 2.x codebase.
 
 Earlier private development history is intentionally not imported because it contained internal development notes and environment-specific information that are not suitable for a public repository.
