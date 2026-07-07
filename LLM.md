@@ -142,6 +142,18 @@ Newly created documents that haven't been validated yet have a reference like `(
 
 ---
 
+## Resource Names
+
+Dolibarr REST endpoints are **lowercase, plural, no underscores**. Standard resources:
+
+`thirdparties`, `contacts`, `products`, `invoices`, `orders`, `proposals`, `projects`, `tasks`, `contracts`, `supplierinvoices`, `supplierorders`, `supplierproposals`, `categories`, `users`, `members`, `tickets`, `bankaccounts`, `warehouses`, `shipments`, `receptions`, `expensereports`, `interventions`, `agendaevents`, `stockmovements`, `donations`, `subscriptions`
+
+All tools auto-correct common slips on the first path segment: singular (`project` → `projects`), capitalization (`Invoices` → `invoices`), underscores (`supplier_invoices` → `supplierinvoices`), and frequent French nouns (`facture` → `invoices`, `devis` → `proposals`, `tiers` → `thirdparties`). **Prefer the exact plural name anyway** — unknown names (e.g. custom-module endpoints) are passed through as-is and only lowercased.
+
+If a call fails with *"HTML page instead of a REST API response"*, the resource name does not exist as an endpoint or the matching Dolibarr module/API is disabled: call `dolibarr_api_explorer` (action: `"modules"`) to see what this installation exposes.
+
+---
+
 ## Tools Reference
 
 ### 1. `dolibarr_api_explorer`

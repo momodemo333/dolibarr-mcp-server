@@ -125,6 +125,28 @@ class CrudToolsTest extends TestCase
         $this->assertFalse($result['success']);
     }
 
+    public function testCreateResourceNormalizesSingularProjectAlias(): void
+    {
+        $this->client->expects($this->once())
+            ->method('post')
+            ->with('projects', ['ref' => 'DALFRED', 'title' => 'Dalfred'])
+            ->willReturn(123);
+
+        $result = json_decode($this->tools->createResource('project', '{"ref": "DALFRED", "title": "Dalfred"}'), true);
+        $this->assertTrue($result['success']);
+        $this->assertSame('Resource created successfully in projects', $result['message']);
+    }
+
+    public function testGetResourceNormalizesAliasInCompositePath(): void
+    {
+        $this->client->expects($this->once())
+            ->method('get')
+            ->with('projects/42/tasks')
+            ->willReturn([]);
+
+        $this->tools->getResource('project', 42, 'tasks');
+    }
+
     public function testUpdateResourcePutsData(): void
     {
         $this->client->expects($this->once())
@@ -297,5 +319,58 @@ class CrudToolsTest extends TestCase
         $this->assertArrayHasKey('rowid', $result[0]);
         $this->assertArrayHasKey('nom', $result[0]);
         $this->assertArrayNotHasKey('town', $result[0]);
+    }
+    public function testListResourcesNormalizesSingularResource(): void
+    {
+        $this->client->expects($this->once())
+            ->method('get')
+            ->with('projects', $this->anything())
+            ->willReturn([]);
+
+        $this->tools->listResources('project');
+    }
+
+    public function testGetResourceNormalizesSingularSubresource(): void
+    {
+        $this->client->expects($this->once())
+            ->method('get')
+            ->with('projects/42/tasks')
+            ->willReturn([]);
+
+        $this->tools->getResource('project', 42, 'task');
+    }
+
+    public function testUpdateResourceNormalizesCompositeSupplierPathAndMapsLineFields(): void
+    {
+        $this->client->expects($this->once())
+            ->method('put')
+            ->with(
+                'supplierinvoices/10/lines/7',
+                $this->callback(fn($data) => $data['pu_ht'] === 100 && !isset($data['subprice']))
+            );
+
+        $this->tools->updateResource('supplier_invoice/10/lines', 7, '{"subprice": 100, "qty": 1}');
+    }
+
+    public function testDeleteResourceNormalizesSingularResource(): void
+    {
+        $this->client->expects($this->once())
+            ->method('delete')
+            ->with('products/3');
+
+        $result = json_decode($this->tools->deleteResource('product', 3), true);
+        $this->assertTrue($result['success']);
+    }
+
+    public function testCreateResourceNormalizesFrenchResource(): void
+    {
+        $this->client->expects($this->once())
+            ->method('post')
+            ->with('invoices', ['socid' => 1])
+            ->willReturn(88);
+
+        $result = json_decode($this->tools->createResource('facture', '{"socid": 1}'), true);
+        $this->assertTrue($result['success']);
+        $this->assertSame('Resource created successfully in invoices', $result['message']);
     }
 }

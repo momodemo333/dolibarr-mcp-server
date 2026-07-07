@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace DolibarrMcp\Tools;
 
 use DolibarrMcp\Client\DolibarrClient;
+use DolibarrMcp\Support\FieldMapper;
 use Mcp\Capability\Attribute\McpTool;
 use Mcp\Capability\Attribute\Schema;
 
 class ContactTools
 {
-    public function __construct(private DolibarrClient $client) {}
+    public function __construct(
+        private DolibarrClient $client,
+        private FieldMapper $fieldMapper,
+    ) {}
 
     #[McpTool(
         name: 'dolibarr_link_contact',
@@ -30,6 +34,7 @@ class ContactTools
         #[Schema(description: 'Contact source: "external" for customer/supplier contacts, "internal" for company employees. Required for proposals, optional for other documents. Default: external')]
         ?string $source = null
     ): string {
+        $resource = $this->fieldMapper->normalizeResource($resource);
         $type = strtoupper($type);
 
         $validTypes = ['BILLING', 'SHIPPING', 'CUSTOMER'];
@@ -99,6 +104,7 @@ class ContactTools
         #[Schema(description: 'Numeric Dolibarr rowid of the document. Do NOT invent or guess this number — it must come from a prior dolibarr_list result. NOT the textual reference (e.g. "CO2306-0002" or "F2024-0001"). If you only have the reference, first call dolibarr_list with sqlfilters: (t.ref:=:\'<your-ref>\') to retrieve the rowid, then call this tool with that exact rowid.')]
         int $id
     ): string {
+        $resource = $this->fieldMapper->normalizeResource($resource);
         $endpoint = "{$resource}/{$id}/contacts";
 
         try {

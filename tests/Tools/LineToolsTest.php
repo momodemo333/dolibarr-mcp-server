@@ -108,4 +108,40 @@ class LineToolsTest extends TestCase
 
         $this->tools->addLine('invoices', 10, '{"subprice": 100, "desc": "Test", "qty": 1}');
     }
+
+    public function testAddLineNormalizesSingularResourceAndUsesPluralLinesEndpoint(): void
+    {
+        $this->client->expects($this->once())
+            ->method('post')
+            ->with('invoices/252/lines', ['qty' => 1, 'subprice' => 100])
+            ->willReturn(55);
+
+        $result = json_decode($this->tools->addLine('invoice', 252, '{"qty": 1, "subprice": 100}'), true);
+        $this->assertTrue($result['success']);
+    }
+
+    public function testAddLineNormalizesSingularSupplierResourceAndMapsSupplierFields(): void
+    {
+        $this->client->expects($this->once())
+            ->method('post')
+            ->with(
+                'supplierinvoices/10/lines',
+                $this->callback(fn($data) => $data['pu_ht'] === 100 && $data['description'] === 'Test' && !isset($data['subprice']))
+            )
+            ->willReturn(56);
+
+        $result = json_decode($this->tools->addLine('supplier_invoice', 10, '{"subprice": 100, "desc": "Test", "qty": 1}'), true);
+        $this->assertTrue($result['success']);
+    }
+
+    public function testCreateFromNormalizesSingularTargetResource(): void
+    {
+        $this->client->expects($this->once())
+            ->method('post')
+            ->with('invoices/createfromorder/9', [])
+            ->willReturn(77);
+
+        $result = json_decode($this->tools->createFrom('invoice', 'order', 9), true);
+        $this->assertTrue($result['success']);
+    }
 }

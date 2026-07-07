@@ -22,6 +22,11 @@ final class ConnectionConfig
         public readonly string $apiKey,
         public readonly int $timeout = 30,
     ) {
+        if (trim($this->baseUrl) === '' || trim($this->apiKey) === '') {
+            throw new RuntimeException(
+                'ConnectionConfig requires a non-empty Dolibarr URL and API key.'
+            );
+        }
     }
 
     public static function fromEnvironment(): self

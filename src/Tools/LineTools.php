@@ -39,6 +39,7 @@ DESC
             ], JSON_PRETTY_PRINT);
         }
 
+        $resource = $this->fieldMapper->normalizeResource($resource);
         $decoded = $this->fieldMapper->mapLineFieldsForResource($decoded, $resource);
 
         $lineEndpoint = $this->fieldMapper->getLineEndpoint($resource);
@@ -73,6 +74,7 @@ DESC
         #[Schema(description: 'Numeric Dolibarr rowid of the source document. Do NOT invent or guess this number — it must come from a prior dolibarr_list result. NOT the textual reference (e.g. "PR2024-0001" or "CO2306-0002"). If you only have the reference, first call dolibarr_list with sqlfilters: (t.ref:=:\'<your-ref>\') to retrieve the rowid, then call this tool with that exact rowid.')]
         int $sourceId
     ): string {
+        $resource = $this->fieldMapper->normalizeResource($resource);
         $action = $this->fieldMapper->getCreateFromAction($sourceType);
         $endpoint = "{$resource}/{$action}/{$sourceId}";
 

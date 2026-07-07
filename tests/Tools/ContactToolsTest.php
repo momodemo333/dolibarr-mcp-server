@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DolibarrMcp\Tests\Tools;
 
 use DolibarrMcp\Client\DolibarrClient;
+use DolibarrMcp\Support\FieldMapper;
 use DolibarrMcp\Tools\ContactTools;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
@@ -17,7 +18,7 @@ class ContactToolsTest extends TestCase
     protected function setUp(): void
     {
         $this->client = $this->createMock(DolibarrClient::class);
-        $this->tools = new ContactTools($this->client);
+        $this->tools = new ContactTools($this->client, new FieldMapper());
     }
 
     public function testLinkContactAddsWithoutSourceFirst(): void
@@ -100,5 +101,29 @@ class ContactToolsTest extends TestCase
         $result = json_decode($this->tools->getDocumentContacts('orders', 999), true);
         $this->assertTrue($result['success']);
         $this->assertEmpty($result['contacts']);
+    }
+
+    public function testLinkContactNormalizesUnderscoreResource(): void
+    {
+        // The tool description itself advertises "supplier_invoices" — the real
+        // Dolibarr endpoint is "supplierinvoices".
+        $this->client->expects($this->once())
+            ->method('post')
+            ->with('supplierinvoices/10/contact/5/BILLING', [])
+            ->willReturn(1);
+
+        $result = json_decode($this->tools->linkContact('supplier_invoices', 10, 5, 'BILLING'), true);
+        $this->assertTrue($result['success']);
+    }
+
+    public function testGetDocumentContactsNormalizesSingularResource(): void
+    {
+        $this->client->expects($this->once())
+            ->method('get')
+            ->with('orders/10/contacts')
+            ->willReturn([]);
+
+        $result = json_decode($this->tools->getDocumentContacts('order', 10), true);
+        $this->assertTrue($result['success']);
     }
 }

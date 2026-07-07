@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace DolibarrMcp\Tools;
 
 use DolibarrMcp\Client\DolibarrClient;
+use DolibarrMcp\Support\FieldMapper;
 use Mcp\Capability\Attribute\McpTool;
 use Mcp\Capability\Attribute\Schema;
 
 class ActionTools
 {
-    public function __construct(private DolibarrClient $client) {}
+    public function __construct(
+        private DolibarrClient $client,
+        private FieldMapper $fieldMapper,
+    ) {}
 
     #[McpTool(
         name: 'dolibarr_action',
@@ -26,6 +30,7 @@ class ActionTools
         #[Schema(description: 'Additional data for the action as JSON object (optional)')]
         ?string $data = null
     ): string {
+        $resource = $this->fieldMapper->normalizeResource($resource);
         $data = ($data === '' || $data === 'null') ? null : $data;
 
         $endpoint = "{$resource}/{$id}/{$action}";

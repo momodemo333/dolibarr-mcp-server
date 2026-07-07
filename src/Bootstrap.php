@@ -103,12 +103,14 @@ class Bootstrap
         ));
         $container->set(ActionTools::class, fn(Container $c) => new ActionTools(
             $c->get(DolibarrClient::class),
+            $c->get(FieldMapper::class),
         ));
         $container->set(ExtrafieldTools::class, fn(Container $c) => new ExtrafieldTools(
             $c->get(DolibarrClient::class),
         ));
         $container->set(ContactTools::class, fn(Container $c) => new ContactTools(
             $c->get(DolibarrClient::class),
+            $c->get(FieldMapper::class),
         ));
         $container->set(FileGenerationTools::class, fn(Container $c) => new FileGenerationTools(
             $c->get(DolibarrClient::class),

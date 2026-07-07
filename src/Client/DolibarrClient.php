@@ -17,10 +17,11 @@ class DolibarrClient
     public function __construct(
         string $baseUrl,
         string $apiKey,
-        int $timeout = 30
+        int $timeout = 30,
+        ?callable $handler = null
     ) {
         $this->apiKey = $apiKey;
-        $this->httpClient = new Client([
+        $config = [
             'base_uri' => rtrim($baseUrl, '/') . '/api/index.php/',
             'timeout' => $timeout,
             'headers' => [
@@ -28,7 +29,11 @@ class DolibarrClient
                 'Content-Type' => 'application/json',
                 'Accept' => 'application/json',
             ],
-        ]);
+        ];
+        if ($handler !== null) {
+            $config['handler'] = $handler;
+        }
+        $this->httpClient = new Client($config);
     }
 
     public static function fromEnvironment(): self
@@ -91,6 +96,11 @@ class DolibarrClient
      */
     private function request(string $method, string $endpoint, array $options = []): array|int|string
     {
+        // A leading slash would make Guzzle resolve the path against the host
+        // root (RFC 3986), silently dropping /api/index.php/ and landing on the
+        // Dolibarr web front controller (HTML/CSRF page) instead of the API.
+        $endpoint = ltrim($endpoint, '/');
+
         try {
             $response = $this->httpClient->request($method, $endpoint, $options);
             $body = $response->getBody()->getContents();
@@ -115,6 +125,10 @@ class DolibarrClient
                 if (preg_match('/^"?(\d+)"?$/', $body, $matches)) {
                     return (int) $matches[1];
                 }
+                // A wrong URL can land on a web page that answers 200 with HTML
+                if ($this->looksLikeHtml($body)) {
+                    throw new RuntimeException('Dolibarr API error: ' . $this->formatErrorBody($body, $endpoint));
+                }
                 throw new RuntimeException('Invalid JSON response: ' . json_last_error_msg() . ' (body: ' . substr($body, 0, 100) . ')');
             }
 
@@ -123,13 +137,8 @@ class DolibarrClient
             $response = $e->getResponse();
             if ($response !== null) {
                 $body = $response->getBody()->getContents();
-                $decoded = json_decode($body, true);
-                $errorMessage = $decoded['error']['message']
-                    ?? $decoded['error']
-                    ?? $body
-                    ?? 'Unknown error';
                 throw new RuntimeException(
-                    "Dolibarr API error ({$response->getStatusCode()}): {$errorMessage}"
+                    "Dolibarr API error ({$response->getStatusCode()}): " . $this->formatErrorBody($body, $endpoint)
                 );
             }
             throw new RuntimeException('HTTP request failed: ' . $e->getMessage());
@@ -143,5 +152,49 @@ class DolibarrClient
             }
             throw new RuntimeException('HTTP request failed: ' . $message);
         }
+    }
+
+    /**
+     * Turn an error body into a short, actionable message for the calling LLM.
+     * Raw bodies are never passed through untruncated: an HTML login/CSRF
+     * page would otherwise flood the tool result with kilobytes of markup.
+     */
+    private function formatErrorBody(string $body, string $endpoint): string
+    {
+        $decoded = json_decode($body, true);
+        if (is_array($decoded)) {
+            $message = $decoded['error']['message'] ?? $decoded['error'] ?? $decoded['message'] ?? null;
+            if (is_array($message)) {
+                $message = json_encode($message, JSON_UNESCAPED_UNICODE);
+            }
+            if (is_string($message) && $message !== '') {
+                return substr($message, 0, 300);
+            }
+            return substr(json_encode($decoded, JSON_UNESCAPED_UNICODE) ?: 'Unknown error', 0, 300);
+        }
+
+        if ($this->looksLikeHtml($body)) {
+            return "The server answered with an HTML page instead of a REST API response."
+                . " The endpoint '{$endpoint}' most likely does not exist on this Dolibarr."
+                . " Resource names are lowercase and plural (e.g. 'thirdparties', 'invoices', 'projects')."
+                . " Use dolibarr_api_explorer to list valid endpoints, and check that the matching"
+                . " Dolibarr module and its API are enabled.";
+        }
+
+        $trimmed = trim($body);
+        if ($trimmed === '') {
+            return 'Empty error response from the API';
+        }
+
+        return substr($trimmed, 0, 300);
+    }
+
+    private function looksLikeHtml(string $body): bool
+    {
+        $start = strtolower(ltrim($body));
+
+        return str_starts_with($start, '<!doctype')
+            || str_starts_with($start, '<html')
+            || str_contains($start, '<html');
     }
 }

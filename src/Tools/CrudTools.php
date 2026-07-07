@@ -18,10 +18,10 @@ class CrudTools
 
     #[McpTool(
         name: 'dolibarr_list',
-        description: 'List resources from any Dolibarr module (thirdparties, invoices, products, orders, contacts, categories, proposals, users). Use dolibarr_api_explorer first to discover available endpoints and filter parameters. The filters id/rowid are normalized to SQL rowid filters because many Dolibarr list endpoints ignore id query params. PITFALL for contacts: To filter by thirdparty, use "thirdparty_ids" (not "socid" or "fk_soc") - example: {"thirdparty_ids": "1"} or {"thirdparty_ids": "1,2,3"}.'
+        description: 'List resources from any Dolibarr module (thirdparties, invoices, products, orders, contacts, categories, proposals, users, projects). Use dolibarr_api_explorer first to discover available endpoints and filter parameters. The filters id/rowid are normalized to SQL rowid filters because many Dolibarr list endpoints ignore id query params. PITFALL for contacts: To filter by thirdparty, use "thirdparty_ids" (not "socid" or "fk_soc") - example: {"thirdparty_ids": "1"} or {"thirdparty_ids": "1,2,3"}.'
     )]
     public function listResources(
-        #[Schema(description: 'The resource type to list. Examples: thirdparties, invoices, products, orders, contacts, categories, proposals, users')]
+        #[Schema(description: 'The resource type to list. Examples: thirdparties, invoices, products, orders, contacts, categories, proposals, users, projects')]
         string $resource,
         #[Schema(description: 'Filter by specific field values as JSON object. Example: {"mode": 1} for customers only, {"status": "1"} for active items, {"id": 123} or {"rowid": 123} to filter by Dolibarr rowid.')]
         ?string $filters = null,
@@ -48,6 +48,7 @@ DESC
         #[Schema(description: 'Comma-separated list of fields to return, to reduce response size and avoid context overflow. Example: "id,nom,email,town" for thirdparties, "id,ref,total_ttc,status" for invoices. The "id" field is always included. If omitted, all fields are returned. Use this whenever listing many records to keep responses compact.')]
         ?string $fields = null
     ): string {
+        $resource = $this->fieldMapper->normalizeResource($resource);
         $filters = ($filters === '' || $filters === 'null') ? null : $filters;
         $sqlfilters = ($sqlfilters === '' || $sqlfilters === 'null') ? null : $sqlfilters;
         $sortfield = ($sortfield === '' || $sortfield === 'null') ? null : $sortfield;
@@ -114,7 +115,7 @@ DESC
         description: 'Get a single resource by its numeric rowid from any Dolibarr module. If you only know the textual reference (e.g. "CO2306-0002", "F2024-0001"), first use dolibarr_list with sqlfilters to resolve it to a rowid. Use dolibarr_api_explorer to discover available endpoints.'
     )]
     public function getResource(
-        #[Schema(description: 'The resource type. Examples: thirdparties, invoices, products, orders, contacts')]
+        #[Schema(description: 'The resource type. Examples: thirdparties, invoices, products, orders, contacts, projects')]
         string $resource,
         #[Schema(description: 'Numeric Dolibarr rowid of the resource. Do NOT invent or guess this number — it must come from a prior dolibarr_list result. NOT the textual reference (e.g. "CO2306-0002" or "F2024-0001"). If you only have the reference, first call dolibarr_list with sqlfilters: (t.ref:=:\'<your-ref>\') to retrieve the rowid, then call this tool with that exact rowid.')]
         int $id,
@@ -123,7 +124,11 @@ DESC
         #[Schema(description: 'Comma-separated list of fields to return, to reduce response size. Example: "id,nom,email,town". The "id" field is always included. If omitted, all fields are returned.')]
         ?string $fields = null
     ): string {
+        $resource = $this->fieldMapper->normalizeResource($resource);
         $subresource = ($subresource === '' || $subresource === 'null') ? null : $subresource;
+        if ($subresource !== null) {
+            $subresource = $this->fieldMapper->normalizeSubresource($subresource);
+        }
         $fields = ($fields === '' || $fields === 'null') ? null : $fields;
 
         $endpoint = "{$resource}/{$id}";
@@ -142,14 +147,15 @@ DESC
 
     #[McpTool(
         name: 'dolibarr_create',
-        description: 'Create a new resource in any Dolibarr module. Use dolibarr_api_explorer to discover required fields. Required fields by module: thirdparties needs "name", contacts need "lastname" + "socid", products need "ref" + "label", proposals/orders/invoices need "socid". PITFALL for contacts: Use "socid" (not "fk_soc") to link contact to thirdparty - fk_soc is silently ignored by the API. PITFALL: Creating orders with multiple lines in one call may fail - create with 1 line then use dolibarr_add_line for additional lines.'
+        description: 'Create a new resource in any Dolibarr module. Use dolibarr_api_explorer to discover required fields. Required fields by module: thirdparties needs "name", contacts need "lastname" + "socid", products need "ref" + "label", projects need "ref" + "title", proposals/orders/invoices need "socid". PITFALL for contacts: Use "socid" (not "fk_soc") to link contact to thirdparty - fk_soc is silently ignored by the API. PITFALL: Creating orders with multiple lines in one call may fail - create with 1 line then use dolibarr_add_line for additional lines.'
     )]
     public function createResource(
-        #[Schema(description: 'The resource type. Examples: thirdparties, invoices, products, orders, contacts')]
+        #[Schema(description: 'The resource type. Examples: thirdparties, invoices, products, orders, contacts, projects')]
         string $resource,
         #[Schema(description: 'The data to create as JSON object. Use dolibarr_api_explorer to discover required fields. Example for thirdparty: {"name": "Company Name", "client": 1}')]
         string $data
     ): string {
+        $resource = $this->fieldMapper->normalizeResource($resource);
         $decoded = json_decode($data, true);
 
         if (!is_array($decoded)) {
@@ -179,13 +185,14 @@ LINE UPDATES (composite paths like "invoices/252/lines" or "supplierinvoices/10/
 DESC
     )]
     public function updateResource(
-        #[Schema(description: 'The resource type. Examples: thirdparties, invoices, products, orders, or composite paths like "invoices/252/lines" or "supplierinvoices/10/lines"')]
+        #[Schema(description: 'The resource type. Examples: thirdparties, invoices, products, orders, projects, or composite paths like "invoices/252/lines" or "supplierinvoices/10/lines"')]
         string $resource,
         #[Schema(description: 'Numeric Dolibarr rowid of the resource. Do NOT invent or guess this number — it must come from a prior dolibarr_list result. NOT the textual reference (e.g. "CO2306-0002" or "F2024-0001"). If you only have the reference, first call dolibarr_list with sqlfilters: (t.ref:=:\'<your-ref>\') to retrieve the rowid, then call this tool with that exact rowid.')]
         int $id,
         #[Schema(description: 'The fields to update as JSON object. Example: {"name": "New Name", "email": "new@email.com"}')]
         string $data
     ): string {
+        $resource = $this->fieldMapper->normalizeResource($resource);
         $decoded = json_decode($data, true);
 
         if (!is_array($decoded)) {
@@ -216,11 +223,12 @@ DESC
         description: 'Delete a resource from any Dolibarr module. Use with caution - this action may be irreversible.'
     )]
     public function deleteResource(
-        #[Schema(description: 'The resource type. Examples: thirdparties, invoices, products, orders')]
+        #[Schema(description: 'The resource type. Examples: thirdparties, invoices, products, orders, projects')]
         string $resource,
         #[Schema(description: 'Numeric Dolibarr rowid of the resource. Do NOT invent or guess this number — it must come from a prior dolibarr_list result. NOT the textual reference (e.g. "CO2306-0002" or "F2024-0001"). If you only have the reference, first call dolibarr_list with sqlfilters: (t.ref:=:\'<your-ref>\') to retrieve the rowid, then call this tool with that exact rowid.')]
         int $id
     ): string {
+        $resource = $this->fieldMapper->normalizeResource($resource);
         $endpoint = "{$resource}/{$id}";
         $this->client->delete($endpoint);
 
