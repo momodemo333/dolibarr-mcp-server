@@ -181,7 +181,7 @@ action: "parameters", module: "thirdparties", endpoint: "/thirdparties", method:
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `resource` | string | Yes | Resource type: `thirdparties`, `invoices`, `products`, `orders`, `contacts`, etc. |
-| `filters` | JSON string | No | Filter by field values: `{"client": 1}` for customers only |
+| `filters` | JSON string | No | Filter by field values: `{"client": 1}` for customers only. `{"id": 123}` and `{"rowid": 123}` are normalized to `t.rowid` SQL filters because many Dolibarr list endpoints ignore raw `id` query params. |
 | `sqlfilters` | string | No | SQL-style filter: `(t.nom:like:'%test%')` or `(t.fk_soc:=:23183)` |
 | `sortfield` | string | No | Field to sort by (SQL column names): `rowid`, `nom`, `datec` (creation), `tms` (modification), `datef` (document date). **Note**: Common aliases like `date_creation` are auto-corrected to `datec` |
 | `sortorder` | string | No | `ASC` or `DESC` |
@@ -199,6 +199,9 @@ filters: {"mode": 1}
 # List only suppliers
 filters: {"mode": 2}
 
+# Get one record by rowid through list
+filters: {"id": 123}, fields: "id,name,email,town"
+
 # Search by name (SQL filter)
 sqlfilters: (t.nom:like:'%Company%')
 
@@ -211,6 +214,11 @@ filters: {"status": "1"}
 # Combine filters + fields for compact results
 filters: {"mode": 1}, sqlfilters: (t.nom:like:'%dupont%'), fields: "id,nom,email,town,zip"
 ```
+
+Use `dolibarr_get(resource: ..., id: ...)` when you already want the full
+object for a known rowid. Use `dolibarr_list(..., filters: {"id": ...})`
+when you need list-style output, field reduction, or to combine rowid with
+other filters.
 
 #### `sqlfilters` Reference
 

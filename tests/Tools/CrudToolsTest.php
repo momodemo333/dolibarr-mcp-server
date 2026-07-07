@@ -50,6 +50,35 @@ class CrudToolsTest extends TestCase
         $this->tools->listResources('thirdparties', '{"mode": 1}');
     }
 
+    public function testListResourcesTranslatesIdFilterToRowidSqlfilter(): void
+    {
+        $this->client->expects($this->once())
+            ->method('get')
+            ->with('thirdparties', [
+                'limit' => 50,
+                'page' => 0,
+                'sqlfilters' => "(t.rowid:=:'42')",
+            ])
+            ->willReturn([['id' => 42, 'name' => 'Acme']]);
+
+        $result = json_decode($this->tools->listResources('thirdparties', '{"id": 42}'), true);
+        $this->assertSame(42, $result[0]['id']);
+    }
+
+    public function testListResourcesCombinesRowidFilterWithSqlfilters(): void
+    {
+        $this->client->expects($this->once())
+            ->method('get')
+            ->with('thirdparties', [
+                'limit' => 50,
+                'page' => 0,
+                'sqlfilters' => "((t.client:=:'1')) AND ((t.rowid:=:'42'))",
+            ])
+            ->willReturn([['id' => 42, 'name' => 'Acme']]);
+
+        $this->tools->listResources('thirdparties', '{"rowid": 42}', "(t.client:=:'1')");
+    }
+
     public function testListResourcesReturnsErrorOnInvalidJson(): void
     {
         $result = json_decode($this->tools->listResources('thirdparties', 'not-json'), true);

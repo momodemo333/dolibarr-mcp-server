@@ -18,12 +18,12 @@ class CrudTools
 
     #[McpTool(
         name: 'dolibarr_list',
-        description: 'List resources from any Dolibarr module (thirdparties, invoices, products, orders, contacts, categories, proposals, users). Use dolibarr_api_explorer first to discover available endpoints and filter parameters. PITFALL for contacts: To filter by thirdparty, use "thirdparty_ids" (not "socid" or "fk_soc") - example: {"thirdparty_ids": "1"} or {"thirdparty_ids": "1,2,3"}.'
+        description: 'List resources from any Dolibarr module (thirdparties, invoices, products, orders, contacts, categories, proposals, users). Use dolibarr_api_explorer first to discover available endpoints and filter parameters. The filters id/rowid are normalized to SQL rowid filters because many Dolibarr list endpoints ignore id query params. PITFALL for contacts: To filter by thirdparty, use "thirdparty_ids" (not "socid" or "fk_soc") - example: {"thirdparty_ids": "1"} or {"thirdparty_ids": "1,2,3"}.'
     )]
     public function listResources(
         #[Schema(description: 'The resource type to list. Examples: thirdparties, invoices, products, orders, contacts, categories, proposals, users')]
         string $resource,
-        #[Schema(description: 'Filter by specific field values as JSON object. Example: {"mode": 1} for customers only, {"status": "1"} for active items')]
+        #[Schema(description: 'Filter by specific field values as JSON object. Example: {"mode": 1} for customers only, {"status": "1"} for active items, {"id": 123} or {"rowid": 123} to filter by Dolibarr rowid.')]
         ?string $filters = null,
         #[Schema(description: <<<'DESC'
 SQL-style filter string for advanced filtering. Operators: like, =, !=, <, >, <=, >=, is (null), isnot (null). Combine with AND/OR. Syntax: (t.field:operator:'value'). Examples by module:
@@ -63,9 +63,16 @@ DESC
             'page' => $page,
         ];
 
+        $rowidSqlfilter = null;
+        $sqlfilterParts = [];
+
         if ($filters !== null) {
             $decoded = json_decode($filters, true);
             if (is_array($decoded)) {
+                $rowidSqlfilter = $this->extractRowidSqlfilter($decoded);
+                if (is_array($rowidSqlfilter)) {
+                    return json_encode($rowidSqlfilter, JSON_PRETTY_PRINT);
+                }
                 $params = array_merge($params, $decoded);
             } elseif (json_last_error() !== JSON_ERROR_NONE) {
                 return json_encode([
@@ -78,7 +85,13 @@ DESC
         }
 
         if ($sqlfilters !== null) {
-            $params['sqlfilters'] = $sqlfilters;
+            $sqlfilterParts[] = $sqlfilters;
+        }
+        if ($rowidSqlfilter !== null) {
+            $sqlfilterParts[] = $rowidSqlfilter;
+        }
+        if (!empty($sqlfilterParts)) {
+            $params['sqlfilters'] = $this->combineSqlfilters($sqlfilterParts);
         }
         if ($sortfield !== null) {
             $params['sortfield'] = $sortfield;
@@ -251,5 +264,55 @@ DESC
 
         // Single object
         return array_intersect_key($result, $allowedKeys);
+    }
+
+    /**
+     * Dolibarr list endpoints commonly ignore id/rowid query parameters.
+     *
+     * @param array<string, mixed> $filters
+     * @return string|array<string, mixed>|null
+     */
+    private function extractRowidSqlfilter(array &$filters): string|array|null
+    {
+        $rowid = null;
+
+        if (array_key_exists('id', $filters)) {
+            $rowid = $filters['id'];
+            unset($filters['id']);
+        }
+        if (array_key_exists('rowid', $filters)) {
+            $rowid = $filters['rowid'];
+            unset($filters['rowid']);
+        }
+
+        if ($rowid === null || $rowid === '') {
+            return null;
+        }
+
+        if (!is_int($rowid) && !(is_string($rowid) && ctype_digit($rowid))) {
+            return [
+                'error' => true,
+                'code' => 'INVALID_ID_FILTER',
+                'message' => 'The filters.id or filters.rowid value must be a numeric Dolibarr rowid.',
+                'received' => $rowid,
+            ];
+        }
+
+        return "(t.rowid:=:'".(int) $rowid."')";
+    }
+
+    /**
+     * @param list<string> $sqlfilters
+     */
+    private function combineSqlfilters(array $sqlfilters): string
+    {
+        if (count($sqlfilters) === 1) {
+            return $sqlfilters[0];
+        }
+
+        return implode(' AND ', array_map(
+            fn(string $sqlfilter): string => '(' . $sqlfilter . ')',
+            $sqlfilters
+        ));
     }
 }
