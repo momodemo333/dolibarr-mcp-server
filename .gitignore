@@ -13,3 +13,6 @@ coverage/
 .DS_Store
 .idea/
 .vscode/
+
+# Local dev notes (not for the public repo)
+/CLAUDE.md

@@ -11,6 +11,7 @@
 - **Request-scoped connection config** (`ConnectionConfig`): callers pass the Dolibarr URL + API key explicitly instead of mutating process-global environment variables (unsafe under PHP-FPM worker reuse). Env vars remain a CLI/stdio fallback.
 - **Usage knowledge served as MCP resources**: LLM.md is sliced at read time into five guides (`dolibarr://guide/essentials`, `tools`, `domains`, `workflows`, `fields-and-quirks`) so every MCP client gets the same guidance Dalfred injects in its system prompt. LLM.md stays the single source of truth.
 - **HTTP integration test suite** (`tests/Integration/`): full JSON-RPC flows (initialize/session persistence/tools/resources/error surfacing) exercised in PHPUnit with in-memory PSR-7 requests — no web server needed.
+- **`id`/`rowid` list filters are normalized to `t.rowid` sqlfilters** in `dolibarr_list`: many Dolibarr list endpoints silently ignore raw `id` query params, so `{"id": 123}` used to return the full unfiltered list. The conversion merges with any user-supplied `sqlfilters`, is documented for agents in LLM.md, and is covered by regression tests in `tests/Tools/CrudToolsTest.php`.
 
 This public repository starts from the Dolibarr MCP Server 2.x codebase.
 
