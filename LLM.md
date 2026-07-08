@@ -33,7 +33,7 @@ This MCP server provides **19 tools** to interact with any Dolibarr ERP instance
 When a requested Dolibarr operation cannot be completed through the MCP:
 
 1. If the MCP does not support the operation, ask the user before using a script, direct API call, SSH, SQL, or any other bypass.
-2. If the MCP should support the operation but fails, document the error in this repository, report it, then fix the MCP or delegate a development session.
+2. If the MCP should support the operation but fails, open a **GitHub issue** on `momodemo333/dolibarr-mcp-server` (not a file in the repo), report it, then fix the MCP or delegate a development session.
 3. Never silently bypass the MCP and then present the operation as normal MCP success.
 
 For project task time entries, use `dolibarr_add_time_spent`. If it returns `MCP_API_ENDPOINT_BUG`, the entry was **not confirmed as created**; do not bypass silently.
@@ -61,7 +61,26 @@ Recommended workflow:
 3. Create the task with `fk_project`, `ref`, `label`, and `description`.
 4. Re-read the project tasks to verify the task is attached.
 
-If a create call returns `Bad Request: ref field missing`, retry with an explicit `ref`; also document the friction under `dev/issues/` if this reveals a missing MCP improvement.
+If a create call returns `Bad Request: ref field missing`, retry with an explicit `ref`; if this reveals a missing MCP improvement, open a **GitHub issue** on `momodemo333/dolibarr-mcp-server` (do not add files under `dev/issues/` anymore).
+
+### Reading task time entries (`/tasks/{id}/timespent`)
+
+Read entries back with `dolibarr_get(resource: "tasks", id: <id>, subresource: "timespent")`.
+
+⚠️ This endpoint uses **prefixed field names**, not generic ones. If you pass `fields`, use the real names or nothing matches:
+
+- `timespent_line_id`, `timespent_line_date`, `timespent_line_datehour`, `timespent_line_duration`, `timespent_line_fk_user`, `timespent_line_fk_product`, `timespent_line_note`
+- context fields: `task_ref`, `project_ref`, `thirdparty_name`
+
+If you pass field names that don't exist on the returned data, the server returns `{"warning": "unknown_fields", "requested_fields": [...], "available_fields": [...]}` instead of a silently-empty result. Read `available_fields` and retry (or omit `fields`).
+
+### Compact project task listing
+
+`dolibarr_get(resource: "projects", id: <id>, subresource: "tasks")` returns full task objects with many null/irrelevant fields. To keep responses small, request only the useful fields:
+
+```text
+fields: "id,ref,label,fk_statut,progress,duration_effective,planned_workload,date_start,date_end"
+```
 
 ## ⚠️ CRITICAL: Update Behavior — Read Before You Write
 

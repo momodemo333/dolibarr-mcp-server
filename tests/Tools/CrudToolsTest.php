@@ -258,6 +258,32 @@ class CrudToolsTest extends TestCase
         $this->assertSame(['id' => 1, 'nom' => 'A'], $result[0]);
     }
 
+    public function testListResourcesFieldsAllUnknownReturnsWarning(): void
+    {
+        // Mimics /tasks/{id}/timespent: prefixed keys the LLM won't guess.
+        $this->client->method('get')->willReturn([
+            ['timespent_line_id' => 5, 'timespent_line_duration' => 7200],
+        ]);
+
+        $result = json_decode($this->tools->listResources('tasks', fields: 'id,date,duration'), true);
+
+        $this->assertSame('unknown_fields', $result['warning']);
+        $this->assertSame(['id', 'date', 'duration'], $result['requested_fields']);
+        $this->assertContains('timespent_line_duration', $result['available_fields']);
+    }
+
+    public function testGetResourceFieldsAllUnknownReturnsWarning(): void
+    {
+        $this->client->method('get')->willReturn(
+            ['timespent_line_id' => 5, 'timespent_line_duration' => 7200]
+        );
+
+        $result = json_decode($this->tools->getResource('tasks', 18, subresource: 'timespent', fields: 'date,duration'), true);
+
+        $this->assertSame('unknown_fields', $result['warning']);
+        $this->assertContains('timespent_line_id', $result['available_fields']);
+    }
+
     public function testListResourcesFieldsEmptyResult(): void
     {
         $this->client->method('get')->willReturn([]);

@@ -2,6 +2,8 @@
 
 ## 2.1.0 (unreleased)
 
+- **`fields` filter no longer hides mistakes silently**: when none of the requested field names exist on the returned data, the tool now returns `{"warning": "unknown_fields", "requested_fields": [...], "available_fields": [...]}` instead of an empty `[[]]`. This was misleading agents into thinking a working endpoint (e.g. `/tasks/{id}/timespent`, whose keys are prefixed `timespent_line_*`) was broken. Covered by regression tests in `tests/Tools/CrudToolsTest.php`.
+- **Documented required fields and field names that agents kept guessing wrong**: `dolibarr_create` now states that tasks need `ref` + `fk_project` and proposals need `socid` + `date` (a dateless proposal fails with a misleading "Error creating order" 500); LLM.md documents the real `/tasks/{id}/timespent` field names and a compact `fields` recipe for project task listings.
 - **Migrated from `php-mcp/server` to the official MCP PHP SDK (`mcp/sdk`)** — ReactPHP is gone entirely.
 - The Streamable HTTP transport is now **per-request** (PSR-7, PHP-FPM/Apache friendly): no daemon, no event loop, no port to manage. `Bootstrap::handleHttpRequest()` handles one HTTP request and returns a PSR-7 response; `Bootstrap::emit()` sends it to the SAPI output.
 - HTTP sessions are persisted on disk between requests (`FileSessionStore`), so the `Mcp-Session-Id` handshake works under PHP-FPM.

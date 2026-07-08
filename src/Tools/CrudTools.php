@@ -147,7 +147,7 @@ DESC
 
     #[McpTool(
         name: 'dolibarr_create',
-        description: 'Create a new resource in any Dolibarr module. Use dolibarr_api_explorer to discover required fields. Required fields by module: thirdparties needs "name", contacts need "lastname" + "socid", products need "ref" + "label", projects need "ref" + "title", proposals/orders/invoices need "socid". PITFALL for contacts: Use "socid" (not "fk_soc") to link contact to thirdparty - fk_soc is silently ignored by the API. PITFALL: Creating orders with multiple lines in one call may fail - create with 1 line then use dolibarr_add_line for additional lines.'
+        description: 'Create a new resource in any Dolibarr module. Use dolibarr_api_explorer to discover required fields. Required fields by module: thirdparties needs "name", contacts need "lastname" + "socid", products need "ref" + "label", projects need "ref" + "title", tasks need "ref" + "fk_project" (the API rejects tasks with no ref — read existing project tasks first to pick the next ref), orders/invoices need "socid", proposals need "socid" + "date" (a proposal with no "date"/"datep" fails with a misleading "Error creating order" 500). PITFALL for contacts: Use "socid" (not "fk_soc") to link contact to thirdparty - fk_soc is silently ignored by the API. PITFALL: Creating orders with multiple lines in one call may fail - create with 1 line then use dolibarr_add_line for additional lines.'
     )]
     public function createResource(
         #[Schema(description: 'The resource type. Examples: thirdparties, invoices, products, orders, contacts, projects')]
@@ -255,6 +255,24 @@ DESC
             return $result;
         }
 
+        // If the source has data but none of the requested field names match a
+        // real key, the filter would silently return empty objects — making a
+        // working endpoint look broken. This happens when an LLM guesses generic
+        // names (id, date, duration) on an endpoint that uses prefixed keys, e.g.
+        // /tasks/{id}/timespent returns 'timespent_line_date', not 'date'.
+        // Return an actionable warning listing the real field names instead.
+        $availableKeys = $this->sampleObjectKeys($result);
+        if ($availableKeys !== [] && array_intersect($requestedFields, $availableKeys) === []) {
+            return [
+                'warning' => 'unknown_fields',
+                'message' => 'None of the requested fields exist on the returned data, '
+                    . 'so the field filter was skipped to avoid returning an empty result. '
+                    . 'Retry without "fields", or use the real field names in available_fields.',
+                'requested_fields' => array_values($requestedFields),
+                'available_fields' => $availableKeys,
+            ];
+        }
+
         // Always include id/rowid for follow-up operations
         if (!in_array('id', $requestedFields) && !in_array('rowid', $requestedFields)) {
             array_unshift($requestedFields, 'id');
@@ -272,6 +290,27 @@ DESC
 
         // Single object
         return array_intersect_key($result, $allowedKeys);
+    }
+
+    /**
+     * Return the keys of the source objects (from the first non-empty object of
+     * a list, or the object itself), used to detect a fully-unknown field set.
+     *
+     * @param array<mixed> $result
+     * @return list<string>
+     */
+    private function sampleObjectKeys(array $result): array
+    {
+        if (array_is_list($result)) {
+            foreach ($result as $item) {
+                if (is_array($item) && $item !== []) {
+                    return array_map('strval', array_keys($item));
+                }
+            }
+            return [];
+        }
+
+        return array_map('strval', array_keys($result));
     }
 
     /**
