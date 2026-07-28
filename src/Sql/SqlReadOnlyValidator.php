@@ -101,24 +101,38 @@ class SqlReadOnlyValidator
      */
     private function assertSectionsAllowed(array $tree): void
     {
-        foreach (array_keys($tree) as $section) {
-            if (!in_array(strtoupper((string) $section), self::ALLOWED_SECTIONS, true)) {
-                throw new SqlValidationException(
-                    'SQL_NOT_READ_ONLY',
-                    'Only read-only SELECT queries are allowed (WITH, JOIN, UNION and subqueries are supported).'
-                );
-            }
-        }
+        // Checking only the top level was not enough. A parenthesised
+        // statement is parsed as a BRACKET section whose sub_tree carries the
+        // real command, so "(UPDATE llx_societe SET nom='x')" presented itself
+        // as a lone allowed BRACKET and passed as read-only. The same holds for
+        // any nested sub_tree the parser produces.
+        //
+        // The walk is therefore over the whole tree, and every upper-case key
+        // anywhere in it must be an allowed clause. Section names are the only
+        // upper-case keys the parser emits — node fields are lower-case
+        // (expr_type, base_expr, no_quotes, sub_tree) — so this is fail-closed
+        // by construction: a clause we have never seen is refused rather than
+        // ignored.
+        $this->assertNoForbiddenSectionKey($tree);
+    }
 
-        // A UNION holds one sub-tree per branch; each must be read-only too.
-        foreach (['UNION', 'UNION ALL', 'EXCEPT', 'INTERSECT'] as $key) {
-            if (!isset($tree[$key]) || !is_array($tree[$key])) {
-                continue;
-            }
-            foreach ($tree[$key] as $branch) {
-                if (is_array($branch)) {
-                    $this->assertSectionsAllowed($branch);
+    /**
+     * @param array<mixed> $node
+     */
+    private function assertNoForbiddenSectionKey(array $node): void
+    {
+        foreach ($node as $key => $value) {
+            if (is_string($key) && $key === strtoupper($key) && preg_match('/[A-Z]/', $key) === 1) {
+                if (!in_array($key, self::ALLOWED_SECTIONS, true)) {
+                    throw new SqlValidationException(
+                        'SQL_NOT_READ_ONLY',
+                        'Only read-only SELECT queries are allowed (WITH, JOIN, UNION and subqueries are supported).'
+                    );
                 }
+            }
+
+            if (is_array($value)) {
+                $this->assertNoForbiddenSectionKey($value);
             }
         }
     }

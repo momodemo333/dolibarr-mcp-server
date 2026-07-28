@@ -3,7 +3,11 @@
 !.env.example
 .mcp.json
 vendor/
-composer.lock
+# composer.lock is tracked on purpose: this package is not a library that
+# consumers resolve themselves, it is bundled verbatim into module ZIPs.
+# The emMCP build copies the lock and runs composer install from it, so an
+# untracked lock made a clean clone unbuildable and the bundled dependency
+# versions unreproducible.
 .phpunit.cache/
 build/
 dist/

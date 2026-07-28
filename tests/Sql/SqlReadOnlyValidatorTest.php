@@ -61,6 +61,19 @@ class SqlReadOnlyValidatorTest extends TestCase
             'lock in share mode' => ['SELECT rowid FROM llx_societe LOCK IN SHARE MODE', 'SQL_NOT_READ_ONLY'],
             'for share'          => ['SELECT rowid FROM llx_societe FOR SHARE', 'SQL_NOT_READ_ONLY'],
 
+            // --- writes hidden inside brackets ---
+            //
+            // A parenthesised statement is parsed as a BRACKET section whose
+            // sub_tree holds the real command. Checking only the top-level
+            // keys accepted every one of these as read-only.
+            'bracketed update'   => ["(UPDATE llx_societe SET nom = 'x')", 'SQL_NOT_READ_ONLY'],
+            'bracketed delete'   => ['(DELETE FROM llx_societe)', 'SQL_NOT_READ_ONLY'],
+            'bracketed insert'   => ["(INSERT INTO llx_societe (nom) VALUES ('x'))", 'SQL_NOT_READ_ONLY'],
+            'bracketed drop'     => ['(DROP TABLE llx_societe)', 'SQL_NOT_READ_ONLY'],
+            'bracketed truncate' => ['(TRUNCATE TABLE llx_societe)', 'SQL_NOT_READ_ONLY'],
+            'double bracketed'   => ["((UPDATE llx_societe SET nom = 'x'))", 'SQL_NOT_READ_ONLY'],
+            'bracketed set'      => ['(SET @x = 1)', 'SQL_NOT_READ_ONLY'],
+
             // --- denied tables, reached through every route ---
             'denied table'           => ['SELECT rowid FROM llx_const', 'SQL_FORBIDDEN_TABLE'],
             'denied table subquery'  => ['SELECT nom FROM llx_societe WHERE rowid IN (SELECT rowid FROM llx_const)', 'SQL_FORBIDDEN_TABLE'],
@@ -254,6 +267,44 @@ class SqlReadOnlyValidatorTest extends TestCase
      * which exists so `WITH x AS (…) SELECT … FROM x` does not look like an
      * unknown table, becomes a way to launder a denied one.
      */
+    /**
+     * A parenthesised SELECT is legitimate SQL and stays supported, so the
+     * BRACKET fix is a recursive check rather than a blanket refusal.
+     */
+    public function testBracketedSelectIsStillAccepted(): void
+    {
+        $out = $this->validator->validate('(SELECT rowid, nom FROM llx_societe)');
+        $this->assertStringContainsStringIgnoringCase('select', $out);
+    }
+
+    public function testBracketedUnionIsStillAccepted(): void
+    {
+        $out = $this->validator->validate('(SELECT rowid FROM llx_facture) UNION (SELECT rowid FROM llx_commande)');
+        $this->assertStringContainsStringIgnoringCase('union', $out);
+    }
+
+    /**
+     * The policy must see inside brackets too, not just the section whitelist:
+     * a denied table or column hidden there would otherwise be invisible.
+     */
+    public function testPolicyDescendsIntoBrackets(): void
+    {
+        foreach ([
+            '(SELECT rowid FROM llx_const)' => 'SQL_FORBIDDEN_TABLE',
+            '(SELECT api_key FROM llx_user)' => 'SQL_FORBIDDEN_COLUMN',
+            '(SELECT * FROM llx_facture)' => 'SQL_STAR_NOT_ALLOWED',
+            '(SELECT rowid FROM other_db.llx_societe)' => 'SQL_QUALIFIED_TABLE',
+            '(SELECT SLEEP(5))' => 'SQL_FORBIDDEN_FUNCTION',
+        ] as $sql => $expected) {
+            try {
+                $this->validator->validate($sql);
+                $this->fail('Expected rejection for: ' . $sql);
+            } catch (SqlValidationException $e) {
+                $this->assertSame($expected, $e->code(), $sql);
+            }
+        }
+    }
+
     public function testCteMayNotShadowATableName(): void
     {
         $attack = 'WITH x AS (SELECT name, value FROM llx_const), '
