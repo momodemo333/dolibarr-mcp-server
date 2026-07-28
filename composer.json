@@ -5,11 +5,13 @@
     "license": "MIT",
     "require": {
         "php": "^8.1",
+        "ext-mbstring": "*",
         "ext-fileinfo": "*",
         "guzzlehttp/guzzle": "^7.10",
         "mcp/sdk": "^0.6",
         "symfony/finder": "^6.4",
-        "webmozart/assert": "^1.11"
+        "webmozart/assert": "^1.11",
+        "greenlion/php-sql-parser": "^4.7"
     },
     "autoload": {
         "psr-4": {

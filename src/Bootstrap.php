@@ -8,6 +8,7 @@ use DolibarrMcp\Client\ApiSchemaClient;
 use DolibarrMcp\Client\DolibarrClient;
 use DolibarrMcp\Config\ConnectionConfig;
 use DolibarrMcp\Resources\GuideResources;
+use DolibarrMcp\Sql\SqlCapabilityInterface;
 use DolibarrMcp\Support\FieldMapper;
 use DolibarrMcp\Support\LlmFriendlyReferenceHandler;
 use DolibarrMcp\Tools\ActionTools;
@@ -17,6 +18,7 @@ use DolibarrMcp\Tools\FileGenerationTools;
 use DolibarrMcp\Tools\DocumentTools;
 use DolibarrMcp\Tools\ExplorerTools;
 use DolibarrMcp\Tools\ExtrafieldTools;
+use DolibarrMcp\Tools\Gated\SqlTools;
 use DolibarrMcp\Tools\LineTools;
 use DolibarrMcp\Tools\ProjectTools;
 use GuzzleHttp\Psr7\HttpFactory;
@@ -66,8 +68,10 @@ class Bootstrap
      *                                      the DOLIBARR_URL / DOLIBARR_API_KEY
      *                                      environment variables at first use.
      */
-    public static function createContainer(?ConnectionConfig $config = null): Container
-    {
+    public static function createContainer(
+        ?ConnectionConfig $config = null,
+        ?SqlCapabilityInterface $sqlCapability = null,
+    ): Container {
         $container = new Container();
 
         // Connection settings (lazy: env is only read if no explicit config)
@@ -119,6 +123,11 @@ class Bootstrap
             $c->get(DolibarrClient::class),
         ));
 
+        // Gated tools: only reachable when the host granted the capability.
+        // Registered unconditionally so the container can build them, but the
+        // discovery pass below hides them when the capability is null.
+        $container->set(SqlTools::class, fn() => new SqlTools($sqlCapability));
+
         // Resources (usage guides served to MCP clients)
         $container->set(GuideResources::class, fn() => new GuideResources());
 
@@ -137,14 +146,21 @@ class Bootstrap
         ?Container $container = null,
         ?string $sessionDir = null,
         ?ConnectionConfig $config = null,
+        ?SqlCapabilityInterface $sqlCapability = null,
     ): Server {
-        $container ??= self::createContainer($config);
+        $container ??= self::createContainer($config, $sqlCapability);
+
+        // Without a host-granted database capability the gated tools are not
+        // discovered at all, so they never reach tools/list. Deny-by-default is
+        // structural: an entry point that grants nothing (stdio, standalone
+        // HTTP) cannot expose SQL access even by mistake.
+        $excludeDirs = $sqlCapability === null ? ['Tools/Gated'] : [];
 
         $builder = Server::builder()
-            ->setServerInfo('Dolibarr MCP Server', '2.0.0')
+            ->setServerInfo('Dolibarr MCP Server', '2.2.0')
             ->setContainer($container)
             ->setReferenceHandler(new LlmFriendlyReferenceHandler(new ReferenceHandler($container)))
-            ->setDiscovery(dirname(__DIR__), ['src']);
+            ->setDiscovery(dirname(__DIR__), ['src'], $excludeDirs);
 
         if ($sessionDir !== null) {
             $builder->setSession(new FileSessionStore($sessionDir));
@@ -188,11 +204,12 @@ class Bootstrap
         ?ServerRequestInterface $request = null,
         ?string $sessionDir = null,
         ?ConnectionConfig $config = null,
+        ?SqlCapabilityInterface $sqlCapability = null,
     ): ResponseInterface {
         $request ??= ServerRequest::fromGlobals();
         $sessionDir ??= sys_get_temp_dir() . '/dolibarr-mcp-sessions';
 
-        $server = self::buildServer(null, $sessionDir, $config);
+        $server = self::buildServer(null, $sessionDir, $config, $sqlCapability);
 
         $httpFactory = new HttpFactory();
         $transport = new StreamableHttpTransport(

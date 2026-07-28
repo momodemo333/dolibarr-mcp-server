@@ -2,7 +2,7 @@
 
 ## Overview
 
-This MCP server provides **19 tools** to interact with any Dolibarr ERP instance via its REST API. The tools are designed to work dynamically with any Dolibarr module through Swagger/OpenAPI introspection.
+This MCP server provides **21 tools** to interact with any Dolibarr ERP instance via its REST API. The tools are designed to work dynamically with any Dolibarr module through Swagger/OpenAPI introspection.
 
 **Tools Summary**:
 | Tool | Purpose |
@@ -27,6 +27,10 @@ This MCP server provides **19 tools** to interact with any Dolibarr ERP instance
 | `dolibarr_extrafield_update` | Update an extrafield definition |
 | `dolibarr_extrafield_delete` | Delete an extrafield definition |
 | `dolibarr_files_create` | Create a text-based file for the user to download |
+| `dolibarr_sql_query` | Run a read-only SQL query for reporting (optional, admin-enabled) |
+| `dolibarr_sql_schema` | List the readable database tables and columns (optional, admin-enabled) |
+
+⚠️ The two SQL tools are **optional**: they only appear in `tools/list` when the host application (Dalfred, emMCP…) has explicitly enabled read-only SQL access for the current user. If you do not see them, the feature is not available on this instance — use the REST tools above and do not ask for a SQL workaround.
 
 ## ⚠️ MCP Failure Discipline
 
@@ -848,6 +852,169 @@ The user clicks the link → the file downloads. They can also manage all their 
 - `WriteFailed` — the file could not be written (disk error or permissions issue); tell the user to retry and, if the problem persists, ask their administrator to check disk space and folder permissions.
 
 When you receive one of these errors, explain it plainly to the user (don't show JSON). For `FileGenerationDisabled`, tell them to ask their administrator to enable file generation.
+
+---
+
+### 20. `dolibarr_sql_query`
+
+**Purpose**: Run a **read-only** SQL query directly against the Dolibarr database, for reporting and analysis that the REST tools cannot express (cross-module aggregation, grouping, ranking, period comparison).
+
+**⚠️ This tool may not exist.** It is only registered when the administrator has enabled read-only SQL access for the current user. If it is absent from your tool list, the feature is off — answer with the REST tools and never suggest another way to reach the database.
+
+**When to use:**
+- Aggregated reporting: revenue per customer, per month, per salesperson; top products; ageing balances.
+- Cross-table questions that would otherwise need dozens of `dolibarr_list` calls.
+
+**When NOT to use:**
+- Reading or writing a single record — use `dolibarr_get` / `dolibarr_update`. They respect Dolibarr business rules; SQL does not.
+- Anything that modifies data. Writes are refused, and asking for one wastes a turn.
+
+**Parameters**:
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sql` | string | Yes | A single read-only SQL statement. `SELECT`, `WITH`/CTE, `JOIN`, subqueries, aggregates and `UNION` are supported. |
+
+**⚠️ IMPORTANT — call `dolibarr_sql_schema` first.** Dolibarr column names are not guessable (`fk_soc`, `fk_statut`, `datef`, `total_ht`, `tms`…) and a wrong name costs a full round-trip. Look the table up, then write the query.
+
+**⚠️ IMPORTANT — the rules the server enforces:**
+- **Read-only, strictly.** Only `SELECT` (and `WITH`) statements pass. `INSERT`, `UPDATE`, `DELETE`, `SET`, `SHOW`, `CREATE`, `ALTER`, `DROP`, `TRUNCATE`, `GRANT` and every other DDL/DML form are refused.
+- **One statement per call.** A `;` followed by anything else is refused, as are executable comments (`/*! … */`, `/*M! … */`) and optimizer hints (`/*+ … */`).
+- **No locking reads.** `FOR UPDATE`, `FOR SHARE` and `LOCK IN SHARE MODE` are refused.
+- **Credential columns are refused wherever they appear**, whatever the table or alias. The exact names (`pass_crypted`, `api_key`, `token_hash`, `client_secret`, `code_challenge`, `private_key`, `signature_key`…) plus anything whose name contains `password`, `passwd`, `passphrase`, `apikey`, `token`, `secret`, `credential`, `privatekey` once separators are ignored — so `smtp_password`, `access_token` and `webhook_secret` are refused too. This is deliberately over-inclusive: a few innocent names (`token_count`) are caught as well.
+- **`SELECT *` is always refused**, on every table, and so is `alias.*`. **List the columns you need** — `dolibarr_sql_schema` is there for exactly that. `COUNT(*)` remains allowed.
+- **Query only the current database.** Names qualified by a database (`other_db.llx_societe`, `mysql.user`) are refused; write `llx_societe`. Function names may not be qualified either.
+- **Name your CTEs without the table prefix.** `WITH report_ca AS (…)` is fine; `WITH llx_something AS (…)` is refused, because a CTE borrowing a real table name could hide a denied table.
+- **The server always rewrites the final `LIMIT`.** Your own limit is kept when it is lower (including `LIMIT 0`) and lowered when it is higher; `LIMIT n OFFSET m` is understood.
+- **A row limit is always applied by the server** (200 rows by default). Your own `LIMIT` is honoured only if it is lower; a higher one is silently lowered. When the answer needs more, aggregate (`GROUP BY`, `SUM`, `COUNT`) rather than asking for more rows.
+- **System and auth tables are unreachable**: `information_schema`, `mysql`, `performance_schema`, `sys`, plus `llx_const`, `llx_session`, the OAuth token/client tables and the SQL audit/permission tables themselves. Only tables carrying the instance prefix (usually `llx_`) can be read.
+- **Blocking/file functions are refused**: `sleep`, `benchmark`, `get_lock`, `load_file`… Server and user variables (`@@…`, `@…`) are refused too.
+- A statement timeout and a response size cap are applied by the host on top of all this.
+
+**Success response (excerpt)**:
+```json
+{
+  "success": true,
+  "columns": ["nom", "ca"],
+  "rows": [{"nom": "ACME SARL", "ca": "18420.00000000"}],
+  "row_count": 1,
+  "truncated": false,
+  "duration_ms": 7
+}
+```
+When `truncated` is `true`, a `notice` field says so: the result was cut by the server limit. Narrow the query or aggregate — do not re-run it hoping for more.
+
+**Examples**:
+```sql
+-- Revenue per customer on validated invoices, best first
+SELECT s.nom, SUM(f.total_ht) AS ca_ht, COUNT(*) AS nb_factures
+FROM llx_facture f
+JOIN llx_societe s ON s.rowid = f.fk_soc
+WHERE f.fk_statut = 1
+GROUP BY s.rowid, s.nom
+ORDER BY ca_ht DESC
+
+-- Invoiced amount per month over the last 12 months
+SELECT DATE_FORMAT(f.datef, '%Y-%m') AS mois,
+       COUNT(*) AS nb_factures,
+       SUM(f.total_ht) AS ca_ht
+FROM llx_facture f
+WHERE f.fk_statut > 0
+  AND f.datef >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+GROUP BY mois
+ORDER BY mois
+
+-- Top 20 products by invoiced revenue this year
+SELECT p.ref, p.label, SUM(fd.qty) AS qte, SUM(fd.total_ht) AS ca_ht
+FROM llx_facturedet fd
+JOIN llx_facture f ON f.rowid = fd.fk_facture
+JOIN llx_product p ON p.rowid = fd.fk_product
+WHERE f.fk_statut > 0 AND YEAR(f.datef) = YEAR(CURDATE())
+GROUP BY p.rowid, p.ref, p.label
+ORDER BY ca_ht DESC
+LIMIT 20
+
+-- Activity per salesperson: always list columns explicitly, SELECT * is refused
+SELECT u.login, u.firstname, u.lastname,
+       COUNT(c.rowid) AS nb_commandes,
+       SUM(c.total_ht) AS ca_ht
+FROM llx_commande c
+JOIN llx_user u ON u.rowid = c.fk_user_author
+WHERE c.date_commande >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)
+GROUP BY u.rowid, u.login, u.firstname, u.lastname
+ORDER BY ca_ht DESC
+```
+
+**Errors (stable codes returned in the `code` field)**:
+- `SQL_CAPABILITY_UNAVAILABLE` — read-only SQL is not enabled on this instance, or not granted to this user. Tell the user to ask their administrator; do not retry.
+- `SQL_NOT_READ_ONLY` — the statement is not a plain query (write, DDL, `SET`, `SHOW`…). Rewrite it as a `SELECT` or use the REST tools.
+- `SQL_MULTI_STATEMENT` — more than one statement. Send them one at a time.
+- `SQL_FORBIDDEN_TABLE` / `SQL_FORBIDDEN_COLUMN` / `SQL_FORBIDDEN_FUNCTION` — the named object is out of bounds. Drop it; there is no way around it.
+- `SQL_STAR_NOT_ALLOWED` — replace `SELECT *` (or `alias.*`) with the explicit column list you need. Call `dolibarr_sql_schema` to get the names. `COUNT(*)` is fine.
+- `SQL_QUALIFIED_TABLE` / `SQL_QUALIFIED_COLUMN` — drop the database prefix: write `llx_societe`, not `somedb.llx_societe`.
+- `SQL_CTE_NAME_RESERVED` — rename the CTE so it does not start with the table prefix (`report_x`, not `llx_x`).
+- `SQL_FORBIDDEN_VARIABLE` — remove the `@@`/`@` variable.
+- `SQL_PARSE_ERROR` / `SQL_TOO_LONG` / `SQL_EMPTY` / `SQL_INVALID_ENCODING` — malformed input. Simplify and resend.
+- `SQL_EXECUTABLE_COMMENT` — remove the `/*! … */` or `/*M! … */` block.
+- `SQL_OPTIMIZER_HINT` — remove the `/*+ … */` hint.
+- `SQL_UNTERMINATED_STRING` / `SQL_UNTERMINATED_IDENTIFIER` / `SQL_UNTERMINATED_COMMENT` — close the quote, backtick or comment.
+- `SQL_EXECUTION_ERROR` — the database refused the query (unknown table/column, timeout). Check names with `dolibarr_sql_schema` before retrying.
+
+Explain these plainly to the user; never paste the JSON. A refusal is a policy decision, not a bug: do not try to reword the query to get around it.
+
+---
+
+### 21. `dolibarr_sql_schema`
+
+**Purpose**: List the database tables you may read and their columns, so `dolibarr_sql_query` can be written against the real schema instead of guessed names.
+
+**⚠️ This tool may not exist** — same gate as `dolibarr_sql_query`. It is registered only when the administrator has enabled read-only SQL access.
+
+**Parameters**:
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `table` | string | No | Table name or prefix to narrow the result, e.g. `"llx_facture"`. Omit to list every readable table. |
+
+**⚠️ IMPORTANT**: Tables holding credentials, sessions or the audit trail are **not listed** — their absence is expected, not an error. Sensitive tables that *are* listed (`llx_user`, `llx_socpeople`, `llx_adherent`…) can be queried, but only with an explicit column list.
+
+**Success response (excerpt)**:
+```json
+{
+  "success": true,
+  "tables": {
+    "llx_facture": [
+      {"name": "rowid", "type": "int(11)", "nullable": false, "key": "PRI"},
+      {"name": "ref", "type": "varchar(30)", "nullable": false, "key": "UNI"},
+      {"name": "fk_soc", "type": "int(11)", "nullable": false, "key": "MUL"},
+      {"name": "datef", "type": "date", "nullable": true, "key": ""},
+      {"name": "total_ht", "type": "double(24,8)", "nullable": true, "key": ""},
+      {"name": "fk_statut", "type": "smallint(6)", "nullable": false, "key": ""}
+    ]
+  },
+  "truncated": false
+}
+```
+When `truncated` is `true`, too many tables matched: pass a prefix (`"llx_fac"`) instead of listing everything.
+
+**Examples**:
+```
+# Everything readable on this instance (start here if you don't know the table)
+(no argument)
+
+# Only the invoice tables, before writing a revenue query
+table: "llx_facture"
+
+# All tables of a module, by prefix
+table: "llx_commande"
+```
+
+**Typical sequence**:
+```
+1. dolibarr_sql_schema(table: "llx_facture")   → real column names
+2. dolibarr_sql_query(sql: "SELECT ... FROM llx_facture ...")
+3. Summarize the rows in plain language for the user
+```
+
+**Errors**: `SQL_CAPABILITY_UNAVAILABLE` (feature off or not granted) and `SQL_EXECUTION_ERROR` (schema unreadable), with the same meaning as above.
 
 ---
 

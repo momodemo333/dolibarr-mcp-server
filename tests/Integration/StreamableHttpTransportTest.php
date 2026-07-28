@@ -139,6 +139,70 @@ final class StreamableHttpTransportTest extends TestCase
         }
     }
 
+    /**
+     * The SQL tools must not merely refuse when no host capability is injected:
+     * they must not be listed at all. A tool that exists and always fails tells
+     * the model the feature is there and wastes its context on retries.
+     */
+    public function testSqlToolsAreAbsentWithoutCapability(): void
+    {
+        $names = $this->listToolNames(null);
+
+        $this->assertNotContains('dolibarr_sql_query', $names);
+        $this->assertNotContains('dolibarr_sql_schema', $names);
+    }
+
+    public function testSqlToolsAppearWhenCapabilityIsInjected(): void
+    {
+        $capability = $this->createMock(\DolibarrMcp\Sql\SqlCapabilityInterface::class);
+
+        $names = $this->listToolNames($capability);
+
+        $this->assertContains('dolibarr_sql_query', $names);
+        $this->assertContains('dolibarr_sql_schema', $names);
+    }
+
+    public function testInjectingCapabilityDoesNotHideTheOtherTools(): void
+    {
+        $capability = $this->createMock(\DolibarrMcp\Sql\SqlCapabilityInterface::class);
+
+        $names = $this->listToolNames($capability);
+
+        foreach (['dolibarr_list', 'dolibarr_get', 'dolibarr_api_explorer'] as $expected) {
+            $this->assertContains($expected, $names);
+        }
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function listToolNames(?\DolibarrMcp\Sql\SqlCapabilityInterface $capability): array
+    {
+        $initialize = Bootstrap::handleHttpRequest(
+            $this->postJson($this->initializePayload()),
+            $this->sessionDir,
+            $this->config,
+            $capability
+        );
+        $sessionId = $initialize->getHeaderLine('Mcp-Session-Id');
+        $this->assertNotEmpty($sessionId);
+
+        $response = Bootstrap::handleHttpRequest(
+            $this->postJson(
+                ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => (object) []],
+                ['Mcp-Session-Id' => $sessionId]
+            ),
+            $this->sessionDir,
+            $this->config,
+            $capability
+        );
+
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertArrayNotHasKey('error', $body);
+
+        return array_column($body['result']['tools'], 'name');
+    }
+
     public function testUnknownSessionIsRejected(): void
     {
         $response = $this->handle($this->postJson(

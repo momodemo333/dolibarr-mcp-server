@@ -24,6 +24,7 @@ class GuideResources
             '⚠️ MCP Failure Discipline',
             '⚠️ CRITICAL: Update Behavior — Read Before You Write',
             '⚠️ Resolving a Reference (ref) to a rowid',
+            'Resource Names',
             'Error Handling',
             'Best Practices',
         ],

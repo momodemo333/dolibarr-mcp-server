@@ -5,7 +5,7 @@ Serveur MCP (Model Context Protocol) permettant à un LLM ou agent IA d'interagi
 ## Caractéristiques
 
 - **Découverte dynamique** : Explore automatiquement les modules et endpoints via Swagger/OpenAPI
-- **19 outils MCP** : CRUD, gestion de documents, workflow commercial, projets/temps, contacts, extrafields
+- **21 outils MCP** : CRUD, gestion de documents, workflow commercial, projets/temps, contacts, extrafields, SQL lecture seule (optionnel)
 - **Compatible Dolibarr v18-22+** : S'adapte à votre version
 - **Modules custom** : Fonctionne avec les modules tiers
 - **Double transport** : stdio (CLI) ou HTTP (web)
@@ -124,6 +124,29 @@ Un fichier `.mcp.json.example` est fourni comme modèle pour les clients compati
 |-------|-------------|
 | `dolibarr_extrafield_update` | Modifier un champ personnalisé |
 | `dolibarr_extrafield_delete` | Supprimer un champ personnalisé |
+
+### SQL lecture seule (2 outils, optionnels)
+
+| Outil | Description |
+|-------|-------------|
+| `dolibarr_sql_query` | Exécuter une requête SQL **en lecture seule** (reporting : CA par tiers, par mois, top produits…) |
+| `dolibarr_sql_schema` | Lister les tables et colonnes lisibles, pour écrire des requêtes correctes |
+
+> **⚠️ Sécurité — désactivé par défaut.** Ces deux outils ne sont **pas** enregistrés
+> par les points d'entrée stdio et HTTP standard : ils n'apparaissent même pas dans
+> `tools/list`. Ils ne deviennent disponibles que si le module hôte (Dalfred, emMCP…)
+> injecte explicitement une **capacité SQL** (`SqlCapabilityInterface`) après avoir
+> vérifié que l'utilisateur courant y a droit. Le refus par défaut est donc structurel,
+> pas un simple contrôle à l'exécution.
+>
+> Même une fois activée, la fonctionnalité reste strictement bornée : un seul
+> statement, `SELECT`/`WITH` uniquement (aucune écriture ni DDL), colonnes de
+> credentials (`api_key`, `pass_crypted`, `token_hash`…) refusées partout,
+> `SELECT *` interdit dès qu'une table sensible (`llx_user`, `llx_socpeople`,
+> `llx_adherent`) est référencée, tables système et tables d'authentification
+> inaccessibles, `LIMIT` toujours imposé par le serveur (200 lignes par défaut),
+> timeout et plafond de taille de réponse appliqués par l'hôte, qui journalise
+> également chaque requête.
 
 ## Modules supportés
 
