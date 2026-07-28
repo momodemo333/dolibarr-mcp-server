@@ -952,6 +952,7 @@ ORDER BY ca_ht DESC
 - `SQL_STAR_NOT_ALLOWED` — replace `SELECT *` (or `alias.*`) with the explicit column list you need. Call `dolibarr_sql_schema` to get the names. `COUNT(*)` is fine.
 - `SQL_QUALIFIED_TABLE` / `SQL_QUALIFIED_COLUMN` — drop the database prefix: write `llx_societe`, not `somedb.llx_societe`.
 - `SQL_CTE_NAME_RESERVED` — rename the CTE so it does not start with the table prefix (`report_x`, not `llx_x`).
+- `SQL_AUDIT_FAILED` — the server could not record the call, so the answer is withheld. Not something you can fix: tell the user to ask their administrator.
 - `SQL_FORBIDDEN_VARIABLE` — remove the `@@`/`@` variable.
 - `SQL_PARSE_ERROR` / `SQL_TOO_LONG` / `SQL_EMPTY` / `SQL_INVALID_ENCODING` — malformed input. Simplify and resend.
 - `SQL_EXECUTABLE_COMMENT` — remove the `/*! … */` or `/*M! … */` block.

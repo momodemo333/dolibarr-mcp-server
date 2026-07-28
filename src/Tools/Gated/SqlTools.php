@@ -111,16 +111,27 @@ class SqlTools
             );
         }
 
-        // Introspection reveals which modules an instance runs, so it belongs
-        // in the trail even though it returns no business data.
+        // Introspection reveals which modules an instance runs, so an
+        // unrecorded schema read is withheld rather than returned — the same
+        // fail-closed rule that applies to a successful query. Swallowing the
+        // failure here would have made the audit trail optional in practice
+        // for anyone able to break it.
         try {
-            $this->capability->auditSchemaAccess(
+            $recorded = $this->capability->auditSchemaAccess(
                 $table,
                 count($schema['tables'] ?? []),
                 (int) round((microtime(true) - $startedAt) * 1000)
             );
-        } catch (\Throwable $ignored) {
-            // deliberately swallowed
+        } catch (\Throwable $e) {
+            $recorded = false;
+        }
+
+        if (!$recorded) {
+            return $this->failure(
+                'SQL_AUDIT_FAILED',
+                'The audit trail could not be written, so the schema is withheld. '
+                    . 'Ask an administrator to check the Dolibarr log.'
+            );
         }
 
         $payload = [

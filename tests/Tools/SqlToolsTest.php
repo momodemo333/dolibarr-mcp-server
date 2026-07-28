@@ -114,6 +114,7 @@ class SqlToolsTest extends TestCase
     public function testSchemaReturnsTables(): void
     {
         $capability = $this->capability();
+        $capability->method('auditSchemaAccess')->willReturn(true);
         $capability->expects($this->once())
             ->method('describeSchema')
             ->with('llx_facture')
@@ -167,9 +168,44 @@ class SqlToolsTest extends TestCase
         $capability->method('describeSchema')->willReturn(['tables' => ['llx_facture' => []], 'truncated' => false]);
         $capability->expects($this->once())
             ->method('auditSchemaAccess')
-            ->with('llx_facture', 1, $this->isType('int'));
+            ->with('llx_facture', 1, $this->isType('int'))
+            ->willReturn(true);
 
-        (new SqlTools($capability))->describeDatabaseSchema('llx_facture');
+        $out = $this->decode((new SqlTools($capability))->describeDatabaseSchema('llx_facture'));
+        $this->assertTrue($out['success']);
+    }
+
+    /**
+     * An unrecorded schema read is withheld: swallowing the failure would make
+     * the audit trail optional in practice for anyone able to break it.
+     */
+    public function testSchemaIsWithheldWhenTheAuditCannotBeWritten(): void
+    {
+        $capability = $this->capability();
+        $capability->method('describeSchema')->willReturn(['tables' => ['llx_facture' => []], 'truncated' => false]);
+        $capability->method('auditSchemaAccess')->willReturn(false);
+
+        $raw = (new SqlTools($capability))->describeDatabaseSchema('llx_facture');
+        $out = $this->decode($raw);
+
+        $this->assertFalse($out['success']);
+        $this->assertSame('SQL_AUDIT_FAILED', $out['code']);
+        $this->assertArrayNotHasKey('tables', $out);
+        $this->assertStringNotContainsString('llx_facture', $raw);
+    }
+
+    public function testSchemaIsWithheldWhenTheAuditThrows(): void
+    {
+        $capability = $this->capability();
+        $capability->method('describeSchema')->willReturn(['tables' => ['llx_facture' => []], 'truncated' => false]);
+        $capability->method('auditSchemaAccess')->willThrowException(new \RuntimeException('audit down'));
+
+        $raw = (new SqlTools($capability))->describeDatabaseSchema('llx_facture');
+        $out = $this->decode($raw);
+
+        $this->assertSame('SQL_AUDIT_FAILED', $out['code']);
+        $this->assertArrayNotHasKey('tables', $out);
+        $this->assertStringNotContainsString('audit down', $raw);
     }
 
     public function testSchemaErrorIsNotLeakedVerbatim(): void
@@ -192,6 +228,9 @@ class SqlToolsTest extends TestCase
         $capability = $this->createMock(SqlCapabilityInterface::class);
         $capability->method('getPolicy')->willReturn(new SqlPolicy());
 
+        // auditSchemaAccess is deliberately left unstubbed: a mock returns
+        // false, which now means "not audited" and withholds the schema. Each
+        // test states what it expects, so none of them passes by accident.
         return $capability;
     }
 

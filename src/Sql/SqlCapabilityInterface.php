@@ -72,9 +72,15 @@ interface SqlCapabilityInterface
      * Reading the schema is not neutral — it reveals which modules an instance
      * runs — so it belongs in the trail alongside queries.
      *
+     * Unlike auditRefusal(), the caller acts on the answer: a schema that could
+     * not be recorded is not returned. Implementations must therefore report
+     * failure honestly rather than swallowing it.
+     *
      * @param string|null $tableFilter Filter as submitted
      * @param int         $tableCount  Number of tables described
      * @param int         $durationMs  Wall-clock duration
+     *
+     * @return bool true when the entry was written
      */
-    public function auditSchemaAccess(?string $tableFilter, int $tableCount, int $durationMs): void;
+    public function auditSchemaAccess(?string $tableFilter, int $tableCount, int $durationMs): bool;
 }
