@@ -30,6 +30,11 @@ class SqlPolicy
         'dalfred_toolkit_permissions',
         'dalfred_oauth_token',
         'dalfred_oauth_client',
+        // The SQL feature's own tables: without these, a caller granted SQL
+        // access could read the audit trail that records them, and the list of
+        // who else is allowed.
+        'dalfred_sql_audit',
+        'dalfred_sql_permissions',
     ];
 
     private const DENIED_DATABASES = [

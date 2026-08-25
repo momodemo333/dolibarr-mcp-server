@@ -67,7 +67,11 @@ class SqlReadOnlyValidator
         $normalized = rtrim(trim($sql), "; \t\n\r");
 
         try {
-            $tree = (new PHPSQLParser())->parse($normalized, true);
+            // The parser emits PHP 8.4 deprecations on some malformed input
+            // (e.g. CREATE TEMPORARY TABLE). The statement is refused either
+            // way, but an endpoint that answers JSON cannot afford a notice
+            // printed into its body, so diagnostics are muted for the call.
+            $tree = @(new PHPSQLParser())->parse($normalized, true);
         } catch (\Throwable $e) {
             throw new SqlValidationException(
                 'SQL_PARSE_ERROR',
