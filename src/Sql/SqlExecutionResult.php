@@ -21,7 +21,7 @@ class SqlExecutionResult
         private array $rows,
         private int $rowCount,
         private bool $truncated,
-        private int $durationMs,
+        private float $durationMs,
         private int $bytes,
     ) {
     }
@@ -48,7 +48,13 @@ class SqlExecutionResult
         return $this->truncated;
     }
 
-    public function durationMs(): int
+    /**
+     * Wall-clock duration in milliseconds, kept fractional on purpose.
+     *
+     * Rounded to an int, every fast query reported 0 ms, which reads as a timer
+     * that was never wired rather than as a query that was simply quick.
+     */
+    public function durationMs(): float
     {
         return $this->durationMs;
     }

@@ -208,13 +208,30 @@ class SqlToolsTest extends TestCase
         $this->assertStringNotContainsString('audit down', $raw);
     }
 
+    /**
+     * Both schema paths must swallow the driver message: the unfiltered call
+     * lists table names, the filtered one describes columns, and either can
+     * fail with a message carrying a database or host name.
+     */
     public function testSchemaErrorIsNotLeakedVerbatim(): void
+    {
+        $capability = $this->capability();
+        $capability->method('listTables')
+            ->willThrowException(new \RuntimeException("Unknown database 'secret_db'"));
+
+        $raw = (new SqlTools($capability))->describeDatabaseSchema();
+
+        $this->assertStringNotContainsString('secret_db', $raw);
+        $this->assertSame('SQL_EXECUTION_ERROR', $this->decode($raw)['code']);
+    }
+
+    public function testFilteredSchemaErrorIsNotLeakedVerbatim(): void
     {
         $capability = $this->capability();
         $capability->method('describeSchema')
             ->willThrowException(new \RuntimeException("Unknown database 'secret_db'"));
 
-        $raw = (new SqlTools($capability))->describeDatabaseSchema();
+        $raw = (new SqlTools($capability))->describeDatabaseSchema('llx_facture');
 
         $this->assertStringNotContainsString('secret_db', $raw);
         $this->assertSame('SQL_EXECUTION_ERROR', $this->decode($raw)['code']);

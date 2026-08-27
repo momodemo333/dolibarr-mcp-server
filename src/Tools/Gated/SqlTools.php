@@ -45,7 +45,12 @@ class SqlTools
         }
 
         try {
-            $validated = (new SqlReadOnlyValidator($this->capability->getPolicy()))->validate($sql);
+            $capability = $this->capability;
+            $validated = (new SqlReadOnlyValidator(
+                $capability->getPolicy(),
+                null,
+                static fn (string $table): array => $capability->listColumns($table)
+            ))->validate($sql);
         } catch (SqlValidationException $e) {
             // A refused query never reaches the database, so this is the only
             // chance to record the attempt. An audit failure must not mask the
@@ -82,12 +87,17 @@ class SqlTools
 
     #[McpTool(
         name: 'dolibarr_sql_schema',
-        description: 'List the Dolibarr database tables and their columns, to build correct SQL for dolibarr_sql_query. '
+        description: 'Explore the Dolibarr schema, to build correct SQL for dolibarr_sql_query. '
+            . 'Called without a table, it returns the list of readable table NAMES only. '
+            . 'Called with a table name, it returns that table\'s columns with their types; '
+            . 'a name matching no table exactly is treated as a prefix. '
+            . 'Note on dates: columns such as datef or date_lim_reglement are of type date, '
+            . 'while datec and tms are datetime, both in server time. '
             . 'Tables holding credentials or sessions are not listed.',
         annotations: new ToolAnnotations(readOnlyHint: true),
     )]
     public function describeDatabaseSchema(
-        #[Schema(description: 'Optional table name or prefix to narrow the result, for example "llx_facture". Omit to list every readable table.')]
+        #[Schema(description: 'Table name, for example "llx_facture", to get its columns. A name matching no table exactly is used as a prefix ("llx_fact"). Omit to list every readable table name without columns.')]
         ?string $table = null,
     ): string {
         if ($this->capability === null) {
@@ -95,9 +105,12 @@ class SqlTools
         }
 
         $startedAt = microtime(true);
+        $namesOnly = ($table === null || $table === '');
 
         try {
-            $schema = $this->capability->describeSchema($table);
+            $schema = $namesOnly
+                ? ['tables' => $this->capability->listTables(), 'truncated' => false]
+                : $this->capability->describeSchema($table);
         } catch (\Throwable $e) {
             try {
                 $this->capability->auditRefusal((string) $table, 'SQL_EXECUTION_ERROR', 'schema');
@@ -134,13 +147,42 @@ class SqlTools
             );
         }
 
+        $tables = $schema['tables'] ?? [];
+
+        // Without a filter, answer with table NAMES only.
+        //
+        // Returning every column of every table produced ~380 KB on an ordinary
+        // instance, which the server then cut at 200 tables in alphabetical
+        // order — so an unfiltered call silently stopped somewhere in the "e"s
+        // and llx_facture was not in the answer at all. A caller had no way to
+        // tell, and the notice suggesting a prefix arrived too late to help.
+        //
+        // Names alone are a few kilobytes for a whole instance, which is what
+        // the question "what is in this database" actually needs; the columns
+        // are one more call away, on the table that matters.
+        if ($namesOnly) {
+            $payload = [
+                'success' => true,
+                'tables' => $tables,
+                'truncated' => (bool) ($schema['truncated'] ?? false),
+                'notice' => 'Table names only. Call this tool again with a table name to get its columns.',
+            ];
+            if ($payload['truncated']) {
+                $payload['notice'] = 'Too many tables to list at once; this list is incomplete. '
+                    . 'Pass a table prefix to narrow it.';
+            }
+
+            return $this->encode($payload);
+        }
+
         $payload = [
             'success' => true,
-            'tables' => $schema['tables'] ?? [],
+            'tables' => $tables,
             'truncated' => (bool) ($schema['truncated'] ?? false),
         ];
         if ($payload['truncated']) {
-            $payload['notice'] = 'Too many tables to list at once. Pass a table prefix to narrow the result.';
+            $payload['notice'] = 'Too many tables matched this prefix to list at once. Use a longer prefix, '
+                . 'or the exact table name.';
         }
 
         return $this->encode($payload);

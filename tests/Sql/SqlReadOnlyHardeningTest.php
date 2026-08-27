@@ -231,4 +231,87 @@ class SqlReadOnlyHardeningTest extends TestCase
             ],
         ];
     }
+
+    // ------------------------------------------------------------------
+    // SELECT * — decided against the real columns, not assumed dangerous.
+    // ------------------------------------------------------------------
+
+    /** A resolver standing in for the host's information_schema lookup. */
+    private function resolver(array $columnsByTable): callable
+    {
+        return static fn (string $table): array => $columnsByTable[$table] ?? [];
+    }
+
+    public function testStarIsRefusedWithoutAResolver(): void
+    {
+        // Fail closed: with no way to know what the star stands for, it cannot
+        // be allowed.
+        $this->expectException(SqlValidationException::class);
+        $this->validator->validate('SELECT * FROM llx_societe');
+    }
+
+    public function testStarIsAllowedWhenEveryColumnIsHarmless(): void
+    {
+        $validator = new SqlReadOnlyValidator(
+            new SqlPolicy(),
+            null,
+            $this->resolver(['llx_societe' => ['rowid', 'nom', 'email', 'siren']])
+        );
+
+        $this->assertNotSame('', $validator->validate('SELECT * FROM llx_societe'));
+    }
+
+    public function testStarIsRefusedWhenATableHoldsACredentialColumn(): void
+    {
+        $validator = new SqlReadOnlyValidator(
+            new SqlPolicy(),
+            null,
+            $this->resolver(['llx_user' => ['rowid', 'login', 'pass_crypted']])
+        );
+
+        try {
+            $validator->validate('SELECT * FROM llx_user');
+            $this->fail('SELECT * exposed a credential column');
+        } catch (SqlValidationException $e) {
+            $this->assertSame('SQL_STAR_NOT_ALLOWED', $e->code());
+            // The message must name the offending column, or the caller cannot
+            // tell which table to stop starring.
+            $this->assertStringContainsString('pass_crypted', $e->getMessage());
+        }
+    }
+
+    public function testStarIsRefusedWhenAnyJoinedTableHoldsACredentialColumn(): void
+    {
+        $validator = new SqlReadOnlyValidator(
+            new SqlPolicy(),
+            null,
+            $this->resolver([
+                'llx_facture' => ['rowid', 'ref', 'total_ht'],
+                'llx_user' => ['rowid', 'api_key'],
+            ])
+        );
+
+        $this->expectException(SqlValidationException::class);
+        $validator->validate(
+            'SELECT * FROM llx_facture f JOIN llx_user u ON u.rowid = f.fk_user_valid'
+        );
+    }
+
+    public function testStarStillCannotReachADeniedTable(): void
+    {
+        // The table ban runs before the star is ever resolved.
+        $validator = new SqlReadOnlyValidator(
+            new SqlPolicy(),
+            null,
+            $this->resolver(['llx_const' => ['rowid', 'name', 'value']])
+        );
+
+        $this->expectException(SqlValidationException::class);
+        $validator->validate('SELECT * FROM llx_const');
+    }
+
+    public function testCountStarNeedsNoResolver(): void
+    {
+        $this->assertNotSame('', $this->validator->validate('SELECT COUNT(*) FROM llx_societe'));
+    }
 }

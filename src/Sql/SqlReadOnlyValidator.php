@@ -50,9 +50,27 @@ class SqlReadOnlyValidator
 
     private SqlLexer $lexer;
 
-    public function __construct(private SqlPolicy $policy, ?SqlLexer $lexer = null)
-    {
+    /**
+     * Resolves a table's real column names, or null when the host cannot.
+     *
+     * Supplied by the capability, which owns the database connection. It is
+     * what makes SELECT * decidable: without it the star is refused outright,
+     * because the columns it stands for are unknown.
+     *
+     * @var (callable(string): array<int, string>)|null
+     */
+    private $columnResolver;
+
+    /**
+     * @param (callable(string): array<int, string>)|null $columnResolver
+     */
+    public function __construct(
+        private SqlPolicy $policy,
+        ?SqlLexer $lexer = null,
+        ?callable $columnResolver = null
+    ) {
         $this->lexer = $lexer ?? new SqlLexer($policy->maxSqlLength());
+        $this->columnResolver = $columnResolver;
     }
 
     /**
@@ -439,17 +457,58 @@ class SqlReadOnlyValidator
             }
         }
 
-        // Refused on every table, not just the ones known to hold secrets.
-        // A list of sensitive tables only protects what was thought of, and a
-        // third-party module table such as llx_x_config holding a key was
-        // fully readable through SELECT *. Naming the columns also keeps the
-        // response small, which the model benefits from anyway.
+        // SELECT * used to be refused outright. The reasoning was sound — a
+        // third-party module table such as llx_x_config can hold a key nobody
+        // listed — but the cost was paid on every ordinary query, since naming
+        // every column is nobody's first reflex.
+        //
+        // So the star is now decided rather than assumed: ask the host for the
+        // real columns of every table in the statement and run the same policy
+        // over them. A star standing only for harmless columns is allowed; one
+        // that would expose a credential column is refused, and names it.
+        //
+        // Without a resolver the answer is unknowable, so the old refusal
+        // stands — fail closed, never open.
         if ($found['hasStar']) {
-            throw new SqlValidationException(
-                'SQL_STAR_NOT_ALLOWED',
-                'SELECT * is not allowed: list the columns you need. '
-                    . 'Use dolibarr_sql_schema to look them up. COUNT(*) is allowed.'
-            );
+            if ($this->columnResolver === null) {
+                throw new SqlValidationException(
+                    'SQL_STAR_NOT_ALLOWED',
+                    'SELECT * is not allowed here: list the columns you need. '
+                        . 'Use dolibarr_sql_schema to look them up. COUNT(*) is allowed.'
+                );
+            }
+
+            foreach ($found['tables'] as $table) {
+                $columns = ($this->columnResolver)($table);
+
+                // A table that exists always has columns, so an empty answer
+                // means the lookup did not work — and "we could not find out"
+                // must never be read as "nothing to hide".
+                if ($columns === []) {
+                    throw new SqlValidationException(
+                        'SQL_STAR_NOT_ALLOWED',
+                        sprintf(
+                            'The columns of "%s" could not be resolved, so SELECT * cannot be '
+                                . 'checked. Name the columns you need instead.',
+                            $table
+                        )
+                    );
+                }
+
+                foreach ($columns as $column) {
+                    if (!$this->policy->isColumnAllowed($column)) {
+                        throw new SqlValidationException(
+                            'SQL_STAR_NOT_ALLOWED',
+                            sprintf(
+                                'SELECT * cannot be used on "%s": it would expose the credential '
+                                    . 'column "%s". Name the columns you need instead.',
+                                $table,
+                                $column
+                            )
+                        );
+                    }
+                }
+            }
         }
     }
 

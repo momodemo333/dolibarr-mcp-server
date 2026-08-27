@@ -33,6 +33,30 @@ interface SqlCapabilityInterface
     public function describeSchema(?string $tableFilter = null): array;
 
     /**
+     * Return the real column names of one table, for validating SELECT *.
+     *
+     * The star can only be decided against the columns it actually stands for,
+     * which the validator cannot know on its own. Implementations must return
+     * an empty array for an unknown table rather than raising: an empty list
+     * simply means the star has nothing to expose there.
+     *
+     * @return array<int, string>
+     */
+    public function listColumns(string $table): array;
+
+    /**
+     * Names of every readable table, without their columns.
+     *
+     * Answers the broad "what is in this database" question cheaply. Listing
+     * columns for a whole instance is large enough to need truncating, and a
+     * truncated answer to that question is worse than none: the caller cannot
+     * tell that the table they were looking for was simply cut off.
+     *
+     * @return array<int, string>
+     */
+    public function listTables(): array;
+
+    /**
      * Execute an already-validated read-only query.
      *
      * The SQL passed here has been through SqlReadOnlyValidator and carries a

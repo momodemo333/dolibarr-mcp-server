@@ -157,7 +157,7 @@ class Bootstrap
         $excludeDirs = $sqlCapability === null ? ['Tools/Gated'] : [];
 
         $builder = Server::builder()
-            ->setServerInfo('Dolibarr MCP Server', '2.3.0')
+            ->setServerInfo('Dolibarr MCP Server', '2.4.0')
             ->setContainer($container)
             ->setReferenceHandler(new LlmFriendlyReferenceHandler(new ReferenceHandler($container)))
             ->setDiscovery(dirname(__DIR__), ['src'], $excludeDirs);
