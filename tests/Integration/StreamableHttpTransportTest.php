@@ -176,6 +176,15 @@ final class StreamableHttpTransportTest extends TestCase
     /**
      * @return array<int, string>
      */
+    /**
+     * The environment tool is ungated on purpose: an agent must be able to ask
+     * what it is connected to before anything else has been granted.
+     */
+    public function testEnvironmentToolIsAlwaysListed(): void
+    {
+        $this->assertContains('dolibarr_environment', $this->listToolNames(null));
+    }
+
     private function listToolNames(?\DolibarrMcp\Sql\SqlCapabilityInterface $capability): array
     {
         $initialize = Bootstrap::handleHttpRequest(

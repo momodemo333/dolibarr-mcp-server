@@ -8,6 +8,8 @@ use DolibarrMcp\Client\ApiSchemaClient;
 use DolibarrMcp\Client\DolibarrClient;
 use DolibarrMcp\Config\ConnectionConfig;
 use DolibarrMcp\Resources\GuideResources;
+use DolibarrMcp\Config\EnvironmentInfo;
+use DolibarrMcp\Config\Version;
 use DolibarrMcp\Sql\SqlCapabilityInterface;
 use DolibarrMcp\Support\FieldMapper;
 use DolibarrMcp\Support\LlmFriendlyReferenceHandler;
@@ -16,6 +18,7 @@ use DolibarrMcp\Tools\ContactTools;
 use DolibarrMcp\Tools\CrudTools;
 use DolibarrMcp\Tools\FileGenerationTools;
 use DolibarrMcp\Tools\DocumentTools;
+use DolibarrMcp\Tools\EnvironmentTools;
 use DolibarrMcp\Tools\ExplorerTools;
 use DolibarrMcp\Tools\ExtrafieldTools;
 use DolibarrMcp\Tools\Gated\SqlTools;
@@ -71,6 +74,7 @@ class Bootstrap
     public static function createContainer(
         ?ConnectionConfig $config = null,
         ?SqlCapabilityInterface $sqlCapability = null,
+        ?EnvironmentInfo $environment = null,
     ): Container {
         $container = new Container();
 
@@ -123,6 +127,8 @@ class Bootstrap
             $c->get(DolibarrClient::class),
         ));
 
+        $container->set(EnvironmentTools::class, fn() => new EnvironmentTools($environment));
+
         // Gated tools: only reachable when the host granted the capability.
         // Registered unconditionally so the container can build them, but the
         // discovery pass below hides them when the capability is null.
@@ -147,8 +153,9 @@ class Bootstrap
         ?string $sessionDir = null,
         ?ConnectionConfig $config = null,
         ?SqlCapabilityInterface $sqlCapability = null,
+        ?EnvironmentInfo $environment = null,
     ): Server {
-        $container ??= self::createContainer($config, $sqlCapability);
+        $container ??= self::createContainer($config, $sqlCapability, $environment);
 
         // Without a host-granted database capability the gated tools are not
         // discovered at all, so they never reach tools/list. Deny-by-default is
@@ -157,7 +164,7 @@ class Bootstrap
         $excludeDirs = $sqlCapability === null ? ['Tools/Gated'] : [];
 
         $builder = Server::builder()
-            ->setServerInfo('Dolibarr MCP Server', '2.4.0')
+            ->setServerInfo('Dolibarr MCP Server', Version::SERVER)
             ->setContainer($container)
             ->setReferenceHandler(new LlmFriendlyReferenceHandler(new ReferenceHandler($container)))
             ->setDiscovery(dirname(__DIR__), ['src'], $excludeDirs);
@@ -205,11 +212,12 @@ class Bootstrap
         ?string $sessionDir = null,
         ?ConnectionConfig $config = null,
         ?SqlCapabilityInterface $sqlCapability = null,
+        ?EnvironmentInfo $environment = null,
     ): ResponseInterface {
         $request ??= ServerRequest::fromGlobals();
         $sessionDir ??= sys_get_temp_dir() . '/dolibarr-mcp-sessions';
 
-        $server = self::buildServer(null, $sessionDir, $config, $sqlCapability);
+        $server = self::buildServer(null, $sessionDir, $config, $sqlCapability, $environment);
 
         $httpFactory = new HttpFactory();
         $transport = new StreamableHttpTransport(
