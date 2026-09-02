@@ -480,13 +480,63 @@ class SqlReadOnlyValidatorTest extends TestCase
         $this->assertStringNotContainsString(';', $out);
     }
 
-    public function testParseFailureIsRejected(): void
+    /**
+     * The fallback must not widen what reaches the policy.
+     *
+     * A malformed statement that trips the position pass is refused outright
+     * unless it carries the one construct the fallback exists for, so nothing
+     * new gets a second chance at being parsed loosely.
+     */
+    public function testMalformedSqlDoesNotGetTheFallback(): void
     {
-        try {
-            $this->validator->validate('SELECT FROM WHERE');
-            $this->fail('Expected rejection');
-        } catch (SqlValidationException $e) {
-            $this->assertSame('SQL_PARSE_ERROR', $e->code());
+        foreach ([
+            'SELECT FROM WHERE',
+            'GRANT SELECT ON *.* TO x',
+        ] as $sql) {
+            try {
+                $this->validator->validate($sql);
+                $this->fail('accepted: ' . $sql);
+            } catch (SqlValidationException $e) {
+                $this->assertSame('SQL_PARSE_ERROR', $e->code(), $sql);
+            }
+        }
+    }
+
+    /**
+     * Type parameters containing a comma are valid SQL and must be accepted.
+     *
+     * The parser's position-calculation pass throws on them — it cannot locate
+     * the comma inside DECIMAL(20,6) — so these queries used to come back as
+     * SQL_PARSE_ERROR. Reported from a real session doing accounting maths.
+     */
+    public function testAcceptsCastWithScaleAndPrecision(): void
+    {
+        foreach ([
+            'SELECT CAST(amount AS DECIMAL(20,6)) AS a FROM llx_bank',
+            'SELECT SUM(CAST(amount AS DECIMAL(20,6))) AS total FROM llx_bank',
+            'SELECT CONVERT(amount, DECIMAL(20,6)) AS a FROM llx_bank',
+        ] as $sql) {
+            $this->assertNotSame('', $this->validator->validate($sql), $sql);
+        }
+    }
+
+    /**
+     * The fallback must not become a way in: a write that also trips the
+     * position pass still has to be refused.
+     */
+    public function testFallbackStillRefusesWrites(): void
+    {
+        foreach ([
+            "UPDATE llx_societe SET nom = CAST(1 AS DECIMAL(20,6))",
+            "INSERT INTO llx_societe (nom) VALUES (CAST(1 AS DECIMAL(20,6)))",
+            "DROP TABLE llx_societe",
+        ] as $sql) {
+            try {
+                $this->validator->validate($sql);
+                $this->fail('accepted: ' . $sql);
+            } catch (SqlValidationException $e) {
+                $this->assertNotSame('', $e->code());
+            }
         }
     }
 

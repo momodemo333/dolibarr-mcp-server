@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DolibarrMcp\Sql;
 
+use PHPSQLParser\exceptions\UnableToCalculatePositionException;
 use PHPSQLParser\PHPSQLParser;
 
 /**
@@ -90,6 +91,39 @@ class SqlReadOnlyValidator
             // way, but an endpoint that answers JSON cannot afford a notice
             // printed into its body, so diagnostics are muted for the call.
             $tree = @(new PHPSQLParser())->parse($normalized, true);
+        } catch (UnableToCalculatePositionException $e) {
+            // Position calculation annotates each token with its offset in the
+            // source. Nothing here reads those offsets, but the pass throws on
+            // perfectly valid SQL: it cannot locate the comma inside a type's
+            // parameters, so CAST(x AS DECIMAL(20,6)) came back as a parse
+            // error — reported from a real session doing accounting maths.
+            //
+            // Retrying without positions fixes that, but it must stay narrow.
+            // The parser without positions also builds a tree for malformed
+            // input it otherwise rejects, and a tree it misreads is a tree the
+            // policy misreads too: "SELECT )( FROM llx_const" parsed that way
+            // exposes no table at all, so the forbidden-table check finds
+            // nothing to refuse. That is precisely the parser-disagrees-with-
+            // the-server gap this class exists to close.
+            //
+            // So the retry happens only when the query actually contains what
+            // trips the position pass: a type with two integer parameters.
+            // Anything else keeps failing closed.
+            if (!$this->hasParameterisedType($normalized)) {
+                throw new SqlValidationException(
+                    'SQL_PARSE_ERROR',
+                    'The query could not be parsed. Check its syntax.'
+                );
+            }
+
+            try {
+                $tree = @(new PHPSQLParser())->parse($normalized, false);
+            } catch (\Throwable $e) {
+                throw new SqlValidationException(
+                    'SQL_PARSE_ERROR',
+                    'The query could not be parsed. Check its syntax.'
+                );
+            }
         } catch (\Throwable $e) {
             throw new SqlValidationException(
                 'SQL_PARSE_ERROR',
@@ -510,6 +544,19 @@ class SqlReadOnlyValidator
                 }
             }
         }
+    }
+
+    /**
+     * Does the statement contain a type with two integer parameters?
+     *
+     * That is the one construct known to break the parser's position pass —
+     * DECIMAL(20,6), NUMERIC(10,2) and friends. Both parameters must be plain
+     * integers: nothing can hide in a match, so allowing the retry on this
+     * basis cannot smuggle anything past the checks that follow.
+     */
+    private function hasParameterisedType(string $sql): bool
+    {
+        return preg_match('/\b[A-Za-z]+\s*\(\s*\d+\s*,\s*\d+\s*\)/', $sql) === 1;
     }
 
     /**
