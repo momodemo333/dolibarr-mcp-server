@@ -6,24 +6,38 @@ namespace DolibarrMcp\Tools;
 
 use DolibarrMcp\Client\DolibarrClient;
 use DolibarrMcp\Support\FieldMapper;
+use DolibarrMcp\Support\ListFilterTranslator;
 use Mcp\Capability\Attribute\McpTool;
 use Mcp\Capability\Attribute\Schema;
 
 class CrudTools
 {
+    private ListFilterTranslator $filterTranslator;
+
     public function __construct(
         private DolibarrClient $client,
         private FieldMapper $fieldMapper,
-    ) {}
+        ?ListFilterTranslator $filterTranslator = null,
+    ) {
+        $this->filterTranslator = $filterTranslator ?? new ListFilterTranslator();
+    }
 
     #[McpTool(
         name: 'dolibarr_list',
-        description: 'List resources from any Dolibarr module (thirdparties, invoices, products, orders, contacts, categories, proposals, users, projects). Use dolibarr_api_explorer first to discover available endpoints and filter parameters. The filters id/rowid are normalized to SQL rowid filters because many Dolibarr list endpoints ignore id query params. PITFALL for contacts: To filter by thirdparty, use "thirdparty_ids" (not "socid" or "fk_soc") - example: {"thirdparty_ids": "1"} or {"thirdparty_ids": "1,2,3"}.'
+        description: 'List resources from any Dolibarr module (thirdparties, invoices, products, orders, contacts, categories, proposals, users, projects). Use dolibarr_api_explorer to discover available endpoints. Use "filters" for exact-value matching and "sqlfilters" for partial or comparison matching. A filter that cannot be applied is reported as an error - results are never silently unfiltered, so an empty list means "no match", not "filter ignored". IMPORTANT: thirdparties and contacts are separate resources; not finding an email among thirdparties does not mean the person is absent, search contacts too.'
     )]
     public function listResources(
         #[Schema(description: 'The resource type to list. Examples: thirdparties, invoices, products, orders, contacts, categories, proposals, users, projects')]
         string $resource,
-        #[Schema(description: 'Filter by specific field values as JSON object. Example: {"mode": 1} for customers only, {"status": "1"} for active items, {"id": 123} or {"rowid": 123} to filter by Dolibarr rowid.')]
+        #[Schema(description: <<<'DESC'
+Exact-match filters as a JSON object. Each key is matched with = (not a partial match - use sqlfilters for that). Unsupported keys and values are refused with an explanation instead of being ignored.
+- Field names: use the Dolibarr column name. Common shorthands are accepted and rewritten: "socid"/"fk_soc"/"thirdparty_id" (the third party of the document), "name" (thirdparties -> nom, products -> label, projects -> title, tickets -> subject).
+- Third party: {"socid": 30} works on invoices, orders, proposals, contacts, projects, tickets... For thirdparties themselves use {"id": 30}.
+- Status: invoices and supplier invoices accept draft, unpaid, paid, cancelled - or the numeric code. Other resources filter on their status column.
+- Identity: {"id": 123} or {"rowid": 123} filter by Dolibarr rowid.
+- Examples: {"email": "someone@example.com"} on thirdparties or contacts; {"socid": 30, "status": "unpaid"} on invoices; {"mode": 1} for customers only on thirdparties.
+DESC
+        )]
         ?string $filters = null,
         #[Schema(description: <<<'DESC'
 SQL-style filter string for advanced filtering. Operators: like, =, !=, <, >, <=, >=, is (null), isnot (null). Combine with AND/OR. Syntax: (t.field:operator:'value'). Examples by module:
@@ -74,7 +88,21 @@ DESC
                 if (is_array($rowidSqlfilter)) {
                     return json_encode($rowidSqlfilter, JSON_PRETTY_PRINT);
                 }
-                $params = array_merge($params, $decoded);
+
+                // Never merge the decoded keys into the query string: Dolibarr
+                // binds only the parameters an endpoint declares and discards
+                // the rest silently, so an unsupported filter used to produce a
+                // full unfiltered list that looked like a match. The translator
+                // resolves every key to a native parameter, a sqlfilters
+                // criterion, or an explicit refusal.
+                $translated = $this->filterTranslator->translate($resource, $decoded);
+                if ($translated['error'] !== null) {
+                    return json_encode($translated['error'], JSON_PRETTY_PRINT);
+                }
+                $params = array_merge($params, $translated['params']);
+                foreach ($translated['sqlfilters'] as $criterion) {
+                    $sqlfilterParts[] = $criterion;
+                }
             } elseif (json_last_error() !== JSON_ERROR_NONE) {
                 return json_encode([
                     'error' => true,

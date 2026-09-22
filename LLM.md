@@ -216,7 +216,7 @@ action: "parameters", module: "thirdparties", endpoint: "/thirdparties", method:
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `resource` | string | Yes | Resource type: `thirdparties`, `invoices`, `products`, `orders`, `contacts`, etc. |
-| `filters` | JSON string | No | Filter by field values: `{"client": 1}` for customers only. `{"id": 123}` and `{"rowid": 123}` are normalized to `t.rowid` SQL filters because many Dolibarr list endpoints ignore raw `id` query params. |
+| `filters` | JSON string | No | **Exact-match** filters, e.g. `{"email": "a@b.c"}`. Each key becomes an `=` comparison — use `sqlfilters` for partial matches. A key or value that cannot be honoured is **refused with an error**, never ignored, so an empty result means "no match" and not "filter dropped". `{"id": 123}` / `{"rowid": 123}` are normalized to `t.rowid` filters. |
 | `sqlfilters` | string | No | SQL-style filter: `(t.nom:like:'%test%')` or `(t.fk_soc:=:23183)` |
 | `sortfield` | string | No | Field to sort by (SQL column names): `rowid`, `nom`, `datec` (creation), `tms` (modification), `datef` (document date). **Note**: Common aliases like `date_creation` are auto-corrected to `datec` |
 | `sortorder` | string | No | `ASC` or `DESC` |
@@ -228,27 +228,48 @@ action: "parameters", module: "thirdparties", endpoint: "/thirdparties", method:
 
 **Common filter patterns**:
 ```
-# List only customers
-filters: {"mode": 1}
+# Find a third party by exact email
+resource: thirdparties, filters: {"email": "someone@example.com"}
 
-# List only suppliers
-filters: {"mode": 2}
+# Find a CONTACT by exact email — a person is often a contact, not a company.
+# Not finding an address among thirdparties does NOT mean it is absent:
+# search contacts too before concluding.
+resource: contacts, filters: {"email": "someone@example.com"}
+
+# Third-party categories (thirdparties only)
+filters: {"mode": 1}   # customers
+filters: {"mode": 2}   # prospects
+filters: {"mode": 3}   # neither customer nor prospect
+filters: {"mode": 4}   # suppliers
 
 # Get one record by rowid through list
-filters: {"id": 123}, fields: "id,name,email,town"
+filters: {"id": 123}, fields: "id,nom,email,town"
 
-# Search by name (SQL filter)
+# Partial / comparison matching needs sqlfilters
 sqlfilters: (t.nom:like:'%Company%')
 
-# Filter contacts by thirdparty ID
-sqlfilters: (t.fk_soc:=:23183)
+# Documents belonging to a third party — "socid" is accepted everywhere
+# and rewritten to whatever the endpoint really expects
+resource: invoices, filters: {"socid": 23183}
+resource: contacts, filters: {"socid": 23183}
 
-# Filter by status
-filters: {"status": "1"}
+# Invoice status: draft | unpaid | paid | cancelled, or the numeric code
+resource: invoices, filters: {"socid": 30, "status": "unpaid"}
 
-# Combine filters + fields for compact results
+# Combine filters + sqlfilters + fields for compact, targeted results
 filters: {"mode": 1}, sqlfilters: (t.nom:like:'%dupont%'), fields: "id,nom,email,town,zip"
 ```
+
+**Field names**: use the Dolibarr column name (`nom` for a company, `lastname`
+/ `firstname` for a person, `town`, `email`, `phone`). A few shorthands are
+accepted and rewritten automatically: `socid` / `fk_soc` / `thirdparty_id`,
+and `name` (→ `nom` on thirdparties, `label` on products, `title` on projects,
+`subject` on tickets). On contacts and users, `name` is refused as ambiguous —
+say `lastname` or `firstname`.
+
+**Values with parentheses** cannot travel through Dolibarr's filter syntax.
+`filters: {"name": "Acme (Ltd)"}` is refused; use
+`sqlfilters: (t.nom:like:'%Acme%')` instead.
 
 Use `dolibarr_get(resource: ..., id: ...)` when you already want the full
 object for a known rowid. Use `dolibarr_list(..., filters: {"id": ...})`
@@ -1641,7 +1662,7 @@ dolibarr_list(resource: "thirdparties", filters: {"mode": 1}, sqlfilters: "(t.no
 dolibarr_list(resource: "contacts", sqlfilters: "(t.fk_soc:=:12345)", fields: "id,lastname,firstname,email,phone_pro")
 
 # Find Belgian suppliers
-dolibarr_list(resource: "thirdparties", filters: {"mode": 2}, sqlfilters: "(t.country_code:=:'BE')", fields: "id,name,town,tva_intra")
+dolibarr_list(resource: "thirdparties", filters: {"mode": 4}, sqlfilters: "(t.country_code:=:'BE')", fields: "id,name,town,tva_intra")
 
 # Unpaid invoices over 500€
 dolibarr_list(resource: "invoices", sqlfilters: "(t.fk_statut:=:'1') AND (t.total_ttc:>:'500')", fields: "id,ref,socid,total_ttc,datef,date_lim_reglement")

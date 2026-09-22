@@ -1,5 +1,61 @@
 # Changelog
 
+## 2.6.0
+
+- **`dolibarr_list` filters are applied instead of being silently dropped.** A
+  customer searching for a third party by e-mail was answered with a different
+  company, and the tool reported success. The `filters` argument was documented
+  to the model as "filter by field values", but its decoded keys were merged
+  straight into the HTTP query string — and Dolibarr's router binds only the
+  parameters an endpoint declares in its `index()` signature, discarding every
+  other query parameter without a word. `GET /thirdparties?email=…` therefore
+  ran as a plain unfiltered list. None of the endpoints that matter accept the
+  names a model naturally reaches for: `thirdparties` has no `email` or `name`,
+  `contacts` has no `email`, `invoices` has no `socid` and its `status` wants
+  `draft`/`unpaid`/`paid`/`cancelled` rather than a number. The failure was
+  invisible: an unfiltered list is indistinguishable from a match, so the model
+  presented the first unrelated record as the answer.
+
+  A new `ListFilterTranslator` resolves every key to exactly one of four
+  outcomes, and never to silence:
+
+  - **native parameter** — the endpoint declares it (`mode`, `category`,
+    `thirdparty_ids`, `status`, …), passed through untouched so the core's own
+    semantics and permission handling keep applying;
+  - **known alias** — `socid`/`fk_soc`/`thirdparty_id` become whatever the
+    endpoint really expects (`thirdparty_ids`, or `socid` on tickets, which is
+    the one endpoint that genuinely declares it), and `name` becomes `nom` on
+    thirdparties, `label` on products, `title` on projects, `subject` on
+    tickets;
+  - **column filter** — anything else becomes a `sqlfilters` equality on
+    `t.<key>`, the one mechanism every list endpoint supports; a column that
+    does not exist makes the query fail loudly instead of returning everything;
+  - **refusal before the request** — ambiguous keys (`name` on contacts, where
+    it could mean `lastname` or `firstname`), unknown status words, reserved
+    argument names, and values carrying a parenthesis, which Dolibarr's filter
+    syntax cannot represent. Each refusal names the supported alternative.
+
+  Values are not concatenated into SQL: they travel inside the universal filter
+  syntax, which the core escapes with `$db->escape()`. Apostrophes survive
+  (`O'Brien` reaches SQL correctly); parentheses cannot and are refused rather
+  than mangled.
+
+  The per-resource contract is transcribed from the `index()` signatures of the
+  core API classes. Those filtering parameters are identical from Dolibarr 16
+  through 24-beta — only output and pagination parameters were added over the
+  years — so the same table is correct across the whole supported range.
+
+- **Tool schema and `LLM.md` corrected.** The description promised field-value
+  filtering the tool did not perform, and the examples taught the wrong names:
+  `{"client": 1}` (the parameter is `mode`), `{"status": "1"}` on invoices, and
+  `{"mode": 2}` labelled "suppliers" when 2 is prospects and 4 is suppliers.
+  The documentation now states that `filters` is exact-match, that `sqlfilters`
+  is what does partial matching, and that a filter which cannot be applied is
+  reported as an error — so an empty result means "no match", not "filter
+  ignored". It also warns that thirdparties and contacts are separate
+  resources: not finding an address among companies does not mean the person is
+  absent.
+
 ## 2.2.0
 
 - **Two new read-only SQL tools** (`dolibarr_sql_query`, `dolibarr_sql_schema`) for reporting the REST API cannot express: revenue per thirdparty, invoiced amounts per month, top products, activity per salesperson. `SELECT`, `WITH`/CTE, `JOIN`, subqueries, aggregates and `UNION` are supported. One statement per call; writes, DDL, locking reads (`FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`), credential columns, system/auth tables, blocking functions and server/user variables are refused; `SELECT *` and `alias.*` are refused on every table (`COUNT(*)` excepted), so the agent names the columns it needs; queries are confined to the current database; a row limit is always applied by the server (200 by default, hard-capped at 5000).

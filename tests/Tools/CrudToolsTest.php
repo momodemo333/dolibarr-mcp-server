@@ -41,13 +41,100 @@ class CrudToolsTest extends TestCase
         $this->tools->listResources('thirdparties', null, null, 'date_creation');
     }
 
-    public function testListResourcesMergesJsonFilters(): void
+    /**
+     * Native parameters still reach the endpoint. They are now normalised to
+     * their string form, which is what a query string carries anyway.
+     */
+    public function testListResourcesPassesNativeFiltersThrough(): void
     {
         $this->client->expects($this->once())
             ->method('get')
-            ->with('thirdparties', $this->callback(fn($params) => $params['mode'] === 1 && $params['limit'] === 50));
+            ->with('thirdparties', ['limit' => 50, 'page' => 0, 'mode' => '1'])
+            ->willReturn([]);
 
         $this->tools->listResources('thirdparties', '{"mode": 1}');
+    }
+
+    // -- Filters that used to be dropped silently ---------------------------
+    //
+    // Regression guards for the customer incident: a lookup by e-mail answered
+    // with an unrelated company, because Dolibarr binds only the parameters an
+    // endpoint declares and discards the rest without a word. Asserting the
+    // full parameter array matters here — asserting only that a key is present
+    // is what let the defect through the previous suite.
+
+    public function testThirdpartyEmailFilterIsSentAsASqlfilterNotAQueryParam(): void
+    {
+        $this->client->expects($this->once())
+            ->method('get')
+            ->with('thirdparties', [
+                'limit' => 50,
+                'page' => 0,
+                'sqlfilters' => "(t.email:=:'m.nikolov@example.com')",
+            ])
+            ->willReturn([]);
+
+        $this->tools->listResources('thirdparties', '{"email": "m.nikolov@example.com"}');
+    }
+
+    public function testContactEmailFilterIsSentAsASqlfilter(): void
+    {
+        $this->client->expects($this->once())
+            ->method('get')
+            ->with('contacts', [
+                'limit' => 50,
+                'page' => 0,
+                'sqlfilters' => "(t.email:=:'m.nikolov@example.com')",
+            ])
+            ->willReturn([]);
+
+        $this->tools->listResources('contacts', '{"email": "m.nikolov@example.com"}');
+    }
+
+    public function testInvoiceSocidAndNumericStatusReachTheNativeParameters(): void
+    {
+        $this->client->expects($this->once())
+            ->method('get')
+            ->with('invoices', [
+                'limit' => 50,
+                'page' => 0,
+                'thirdparty_ids' => '30',
+                'status' => 'unpaid',
+            ])
+            ->willReturn([]);
+
+        $this->tools->listResources('invoices', '{"socid": "30", "status": "1"}');
+    }
+
+    public function testFiltersComposeWithAnExplicitSqlfilters(): void
+    {
+        $this->client->expects($this->once())
+            ->method('get')
+            ->with('thirdparties', $this->callback(function (array $params): bool {
+                return $params['sqlfilters'] === "((t.email:=:'a@b.c')) AND ((t.town:like:'%Paris%'))";
+            }))
+            ->willReturn([]);
+
+        $this->tools->listResources('thirdparties', '{"email": "a@b.c"}', "(t.town:like:'%Paris%')");
+    }
+
+    public function testUnsupportedFilterIsRefusedWithoutCallingTheApi(): void
+    {
+        $this->client->expects($this->never())->method('get');
+
+        $result = json_decode($this->tools->listResources('contacts', '{"name": "Dupont"}'), true);
+
+        $this->assertTrue($result['error']);
+        $this->assertSame('AMBIGUOUS_FILTER', $result['code']);
+    }
+
+    public function testInvalidStatusIsRefusedWithoutCallingTheApi(): void
+    {
+        $this->client->expects($this->never())->method('get');
+
+        $result = json_decode($this->tools->listResources('invoices', '{"status": "overdue"}'), true);
+
+        $this->assertSame('INVALID_STATUS_FILTER', $result['code']);
     }
 
     public function testListResourcesTranslatesIdFilterToRowidSqlfilter(): void
