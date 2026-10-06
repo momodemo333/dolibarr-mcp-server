@@ -13,5 +13,5 @@ namespace DolibarrMcp\Config;
  */
 final class Version
 {
-    public const SERVER = '2.6.0';
+    public const SERVER = '2.6.1';
 }

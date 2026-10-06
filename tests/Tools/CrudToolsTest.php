@@ -486,4 +486,34 @@ class CrudToolsTest extends TestCase
         $this->assertTrue($result['success']);
         $this->assertSame('Resource created successfully in invoices', $result['message']);
     }
+
+    public function testCreateSupplierWithoutCodeAsksDolibarrToNumberIt(): void
+    {
+        $this->client->expects($this->once())
+            ->method('post')
+            ->with('thirdparties', ['name' => 'Backblaze', 'fournisseur' => 1, 'code_fournisseur' => '-1'])
+            ->willReturn(42);
+
+        $this->tools->createResource('thirdparties', '{"name":"Backblaze","fournisseur":1}');
+    }
+
+    public function testCreateCustomerWithoutCodeAsksDolibarrToNumberIt(): void
+    {
+        $this->client->expects($this->once())
+            ->method('post')
+            ->with('thirdparties', ['name' => 'Dupont', 'client' => 1, 'code_client' => '-1'])
+            ->willReturn(43);
+
+        $this->tools->createResource('thirdparties', '{"name":"Dupont","client":1}');
+    }
+
+    public function testCreateThirdpartyKeepsAGivenCode(): void
+    {
+        $this->client->expects($this->once())
+            ->method('post')
+            ->with('thirdparties', ['name' => 'Acme', 'fournisseur' => 1, 'code_fournisseur' => 'SU-ACME'])
+            ->willReturn(44);
+
+        $this->tools->createResource('thirdparties', '{"name":"Acme","fournisseur":1,"code_fournisseur":"SU-ACME"}');
+    }
 }

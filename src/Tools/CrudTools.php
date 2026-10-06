@@ -173,6 +173,30 @@ DESC
         return json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 
+    /**
+     * Ask Dolibarr to number a new customer or supplier when no code was given.
+     *
+     * The user interface pre-fills these codes with -1, which tells Dolibarr
+     * to generate one from the configured numbering module. The REST API does
+     * not, so an agent creating a supplier with just a name got a supplier
+     * with no code at all (Dolibarr 21), or an HTTP 500 where the numbering
+     * module requires one (Dolibarr 23). A code the caller did give is kept.
+     *
+     * @param array<string, mixed> $data Thirdparty fields
+     * @return array<string, mixed>
+     */
+    private function withGeneratedPartyCodes(array $data): array
+    {
+        if (!empty($data['fournisseur']) && !isset($data['code_fournisseur'])) {
+            $data['code_fournisseur'] = '-1';
+        }
+        if (!empty($data['client']) && !isset($data['code_client'])) {
+            $data['code_client'] = '-1';
+        }
+
+        return $data;
+    }
+
     #[McpTool(
         name: 'dolibarr_create',
         description: 'Create a new resource in any Dolibarr module. Use dolibarr_api_explorer to discover required fields. Required fields by module: thirdparties needs "name", contacts need "lastname" + "socid", products need "ref" + "label", projects need "ref" + "title", tasks need "ref" + "fk_project" (the API rejects tasks with no ref — read existing project tasks first to pick the next ref), orders/invoices need "socid", proposals need "socid" + "date" (a proposal with no "date"/"datep" fails with a misleading "Error creating order" 500). PITFALL for contacts: Use "socid" (not "fk_soc") to link contact to thirdparty - fk_soc is silently ignored by the API. PITFALL: Creating orders with multiple lines in one call may fail - create with 1 line then use dolibarr_add_line for additional lines.'
@@ -191,6 +215,10 @@ DESC
                 'success' => false,
                 'error' => 'Invalid JSON data provided',
             ], JSON_PRETTY_PRINT);
+        }
+
+        if ($resource === 'thirdparties') {
+            $decoded = $this->withGeneratedPartyCodes($decoded);
         }
 
         $result = $this->client->post($resource, $decoded);

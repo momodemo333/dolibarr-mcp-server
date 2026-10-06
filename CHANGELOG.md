@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.6.1
+
+- **Creating a supplier or customer without a code now asks Dolibarr to number
+  it.** The user interface pre-fills these codes with `-1`, which makes
+  Dolibarr generate one from the configured numbering module; the REST API does
+  not. An agent creating a supplier with just a name got a supplier with no code
+  on Dolibarr 21, and an HTTP 500 on Dolibarr 23 where the numbering module
+  requires one (momodemo333/emmcp#2). `dolibarr_create` on `thirdparties` now
+  sends `-1` for `code_fournisseur` / `code_client` when the party is a
+  supplier / customer and no code was given; a code given by the caller is kept.
+
 ## 2.6.0
 
 - **`dolibarr_list` filters are applied instead of being silently dropped.** A
