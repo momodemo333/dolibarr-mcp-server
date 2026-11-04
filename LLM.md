@@ -18,7 +18,8 @@ This MCP server provides **21 tools** to interact with any Dolibarr ERP instance
 | `dolibarr_create_from` | Create document from another (proposal→order→invoice) |
 | `dolibarr_link_contact` | Link/unlink contacts to documents with roles |
 | `dolibarr_get_contacts` | List contacts linked to a document |
-| `dolibarr_add_time_spent` | Add time spent to a project task via `/tasks/{id}/addtimespent` with clear diagnostics for known API failures |
+| `dolibarr_add_time_spent` | Add time spent to a project task: date-only (`YYYY-MM-DD`) or with hour, optional product; refuses what the core endpoint would silently drop |
+| `dolibarr_update_time_spent` | Modify an existing time spent line (date with/without hour, duration, note, product); invoiced lines are refused |
 | `dolibarr_documents_list` | List documents attached to an element |
 | `dolibarr_documents_upload` | Upload a document to an element |
 | `dolibarr_documents_download` | Download a document |

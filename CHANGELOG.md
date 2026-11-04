@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.7.0
+
+- **`dolibarr_add_time_spent` no longer reports a success that did not
+  happen.** The core endpoint `tasks/{id}/addtimespent` (checked on Dolibarr
+  22.0.3) always stores the line with a start hour, reads the date as GMT and
+  silently drops `product_id` and `progress`: a line meant for 00:00 showed at
+  02:00 and its product stayed empty, while the tool said it had worked.
+  - The date may now be `YYYY-MM-DD` (date-only line, as the Dolibarr timesheet
+    stores it) or `YYYY-MM-DD HH:MM[:SS]`; a new `withHour` forces the mode.
+  - When the host exposes a time spent endpoint (`EnvironmentInfo` new
+    `endpoints` argument, key `timespent` — emMCP 1.8.0 does), the tool uses it
+    and stores product, progress and date-only lines correctly.
+  - Without it, the tool refuses a product, a progress or a date-only line with
+    `UNSUPPORTED_BY_CORE_API` instead of dropping them.
+- **New tool `dolibarr_update_time_spent`**: change the date (with or without
+  hour), duration, note, product or user of an existing time spent line; only
+  the fields passed change, and an invoiced line is refused. Partial updates
+  need the host endpoint; with the core endpoint alone the full line is
+  required (that endpoint replaces the note and always stores a start hour).
+- `EnvironmentInfo` gains `endpoints` and `endpoint()`; `dolibarr_environment`
+  lists them as `extra_endpoints`.
+
 ## 2.6.1
 
 - **Creating a supplier or customer without a code now asks Dolibarr to number

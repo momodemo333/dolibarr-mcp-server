@@ -25,6 +25,11 @@ final class EnvironmentInfo
      * @param int|null           $entity          current Dolibarr entity id
      * @param bool               $multicompany    whether the Multicompany module is active
      * @param array<string,bool> $capabilities    what this MCP session actually grants
+     * @param array<string,string> $endpoints     REST endpoints the host adds to the core API,
+     *                                            by purpose, relative to the API root. Known key:
+     *                                            "timespent" (POST {path}, GET/PUT {path}/{id}),
+     *                                            which stores the product and date-only lines that
+     *                                            the core tasks/{id}/addtimespent endpoint drops.
      */
     public function __construct(
         public readonly ?string $dolibarrVersion = null,
@@ -34,6 +39,7 @@ final class EnvironmentInfo
         public readonly ?int $entity = null,
         public readonly bool $multicompany = false,
         public readonly array $capabilities = [],
+        public readonly array $endpoints = [],
     ) {
     }
 
@@ -65,7 +71,20 @@ final class EnvironmentInfo
 
         $out['multicompany'] = $this->multicompany;
         $out['capabilities'] = $this->capabilities;
+        if ($this->endpoints !== []) {
+            $out['extra_endpoints'] = $this->endpoints;
+        }
 
         return $out;
+    }
+
+    /**
+     * Path of a host-provided REST endpoint, or null when the host has none.
+     */
+    public function endpoint(string $purpose): ?string
+    {
+        $path = $this->endpoints[$purpose] ?? null;
+
+        return is_string($path) && trim($path, '/ ') !== '' ? trim($path, '/ ') : null;
     }
 }

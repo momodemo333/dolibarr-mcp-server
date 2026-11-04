@@ -125,6 +125,7 @@ class Bootstrap
         ));
         $container->set(ProjectTools::class, fn(Container $c) => new ProjectTools(
             $c->get(DolibarrClient::class),
+            $environment,
         ));
 
         $container->set(EnvironmentTools::class, fn() => new EnvironmentTools($environment));

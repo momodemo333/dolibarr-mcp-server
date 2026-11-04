@@ -106,7 +106,8 @@ Un fichier `.mcp.json.example` est fourni comme modèle pour les clients compati
 
 | Outil | Description |
 |-------|-------------|
-| `dolibarr_add_time_spent` | Ajouter une ligne de temps sur une tâche projet via `/tasks/{id}/addtimespent`, avec diagnostic clair si l'API Dolibarr échoue avant traitement |
+| `dolibarr_add_time_spent` | Ajouter une ligne de temps sur une tâche projet (date seule ou avec heure, produit) ; refuse ce que l'API du cœur ignorerait |
+| `dolibarr_update_time_spent` | Modifier une ligne de temps existante (date avec ou sans heure, durée, note, produit) ; ligne facturée refusée |
 
 ### Gestion documentaire (5 outils)
 
