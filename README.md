@@ -230,3 +230,11 @@ php8.1 vendor/bin/phpunit
 ## License
 
 MIT
+
+## Extensions (outils d'autres modules)
+
+Depuis 2.7.0, l'hôte (emMCP, Dalfred) peut ajouter des outils fournis par d'autres
+modules Dolibarr : il passe à `Bootstrap::handleHttpRequest()` une liste d'objets
+`DolibarrMcp\Extension\ToolExtension`. Chaque extension fournit des objets dont
+les méthodes publiques portent `#[McpTool]` et `#[Schema]`, comme les classes
+d'outils de ce paquet. Le préfixe `dolibarr_` est réservé aux outils intégrés.

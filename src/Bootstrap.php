@@ -10,6 +10,8 @@ use DolibarrMcp\Config\ConnectionConfig;
 use DolibarrMcp\Resources\GuideResources;
 use DolibarrMcp\Config\EnvironmentInfo;
 use DolibarrMcp\Config\Version;
+use DolibarrMcp\Extension\ExtensionRegistrar;
+use DolibarrMcp\Extension\ToolExtension;
 use DolibarrMcp\Sql\SqlCapabilityInterface;
 use DolibarrMcp\Support\FieldMapper;
 use DolibarrMcp\Support\LlmFriendlyReferenceHandler;
@@ -148,6 +150,9 @@ class Bootstrap
      *                                survive across PHP-FPM requests (required for the
      *                                Streamable HTTP transport). When null, the SDK's
      *                                in-memory store is used (fine for stdio).
+     * @param iterable<ToolExtension> $extensions Tools provided by other modules, handed
+     *                                over by the host (see ToolExtension). A tool breaking
+     *                                a rule is skipped and logged, never fatal.
      */
     public static function buildServer(
         ?Container $container = null,
@@ -155,6 +160,7 @@ class Bootstrap
         ?ConnectionConfig $config = null,
         ?SqlCapabilityInterface $sqlCapability = null,
         ?EnvironmentInfo $environment = null,
+        iterable $extensions = [],
     ): Server {
         $container ??= self::createContainer($config, $sqlCapability, $environment);
 
@@ -172,6 +178,12 @@ class Bootstrap
 
         if ($sessionDir !== null) {
             $builder->setSession(new FileSessionStore($sessionDir));
+        }
+
+        $registrar = new ExtensionRegistrar();
+        $registrar->register($builder, $container, $extensions);
+        foreach ($registrar->rejected() as $reason) {
+            error_log('[dolibarr-mcp-server] extension tool skipped: ' . $reason);
         }
 
         return $builder->build();
@@ -207,6 +219,7 @@ class Bootstrap
      *
      * @param ServerRequestInterface|null $request    Defaults to the current request (superglobals).
      * @param string|null                 $sessionDir Where to persist MCP sessions between requests.
+     * @param iterable<ToolExtension>     $extensions Tools provided by other modules (see buildServer()).
      */
     public static function handleHttpRequest(
         ?ServerRequestInterface $request = null,
@@ -214,11 +227,12 @@ class Bootstrap
         ?ConnectionConfig $config = null,
         ?SqlCapabilityInterface $sqlCapability = null,
         ?EnvironmentInfo $environment = null,
+        iterable $extensions = [],
     ): ResponseInterface {
         $request ??= ServerRequest::fromGlobals();
         $sessionDir ??= sys_get_temp_dir() . '/dolibarr-mcp-sessions';
 
-        $server = self::buildServer(null, $sessionDir, $config, $sqlCapability, $environment);
+        $server = self::buildServer(null, $sessionDir, $config, $sqlCapability, $environment, $extensions);
 
         $httpFactory = new HttpFactory();
         $transport = new StreamableHttpTransport(

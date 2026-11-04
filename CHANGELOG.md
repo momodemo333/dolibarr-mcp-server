@@ -21,6 +21,13 @@
   required (that endpoint replaces the note and always stores a start hour).
 - `EnvironmentInfo` gains `endpoints` and `endpoint()`; `dolibarr_environment`
   lists them as `extra_endpoints`.
+- **Extension point for tools of other modules.** A host can hand
+  `Bootstrap::buildServer()` / `handleHttpRequest()` a list of
+  `DolibarrMcp\Extension\ToolExtension`. Each provides plain objects whose
+  public methods carry `#[McpTool]` / `#[Schema]`, exactly like the built-in tool
+  classes; the input schema is generated the same way. Extension tools cannot
+  use the `dolibarr_` prefix, so a built-in tool can never be shadowed; a tool
+  with an invalid or duplicate name is skipped and logged, never fatal.
 
 ## 2.6.1
 
