@@ -13,11 +13,16 @@ class ApiSchemaClient
     private string $baseUrl;
     private string $apiKey;
     private ?array $schema = null;
+    private ?int $entity;
+    /** @var callable|null */
+    private $handler;
 
-    public function __construct(string $baseUrl, string $apiKey)
+    public function __construct(string $baseUrl, string $apiKey, ?int $entity = null, ?callable $handler = null)
     {
         $this->baseUrl = rtrim($baseUrl, '/');
         $this->apiKey = $apiKey;
+        $this->entity = $entity;
+        $this->handler = $handler;
     }
 
     public static function fromEnvironment(): self
@@ -47,14 +52,23 @@ class ApiSchemaClient
 
         $url = $this->baseUrl . '/api/index.php/explorer/swagger.json';
 
-        $client = new Client(['timeout' => 30]);
+        $clientConfig = ['timeout' => 30];
+        if ($this->handler !== null) {
+            $clientConfig['handler'] = $this->handler;
+        }
+        $client = new Client($clientConfig);
+
+        $headers = [
+            'DOLAPIKEY' => $this->apiKey,
+            'Accept' => 'application/json',
+        ];
+        if ($this->entity !== null) {
+            $headers['DOLAPIENTITY'] = (string) $this->entity;
+        }
 
         try {
             $response = $client->get($url, [
-                'headers' => [
-                    'DOLAPIKEY' => $this->apiKey,
-                    'Accept' => 'application/json',
-                ],
+                'headers' => $headers,
             ]);
 
             $body = $response->getBody()->getContents();

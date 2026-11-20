@@ -86,11 +86,11 @@ class Bootstrap
         // Clients
         $container->set(DolibarrClient::class, function (Container $c) {
             $cfg = $c->get(ConnectionConfig::class);
-            return new DolibarrClient($cfg->baseUrl, $cfg->apiKey, $cfg->timeout);
+            return new DolibarrClient($cfg->baseUrl, $cfg->apiKey, $cfg->timeout, null, $cfg->entity);
         });
         $container->set(ApiSchemaClient::class, function (Container $c) {
             $cfg = $c->get(ConnectionConfig::class);
-            return new ApiSchemaClient($cfg->baseUrl, $cfg->apiKey);
+            return new ApiSchemaClient($cfg->baseUrl, $cfg->apiKey, $cfg->entity);
         });
 
         // Support

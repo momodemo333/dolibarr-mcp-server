@@ -18,17 +18,22 @@ class DolibarrClient
         string $baseUrl,
         string $apiKey,
         int $timeout = 30,
-        ?callable $handler = null
+        ?callable $handler = null,
+        ?int $entity = null
     ) {
         $this->apiKey = $apiKey;
+        $headers = [
+            'DOLAPIKEY' => $apiKey,
+            'Content-Type' => 'application/json',
+            'Accept' => 'application/json',
+        ];
+        if ($entity !== null) {
+            $headers['DOLAPIENTITY'] = (string) $entity;
+        }
         $config = [
             'base_uri' => rtrim($baseUrl, '/') . '/api/index.php/',
             'timeout' => $timeout,
-            'headers' => [
-                'DOLAPIKEY' => $apiKey,
-                'Content-Type' => 'application/json',
-                'Accept' => 'application/json',
-            ],
+            'headers' => $headers,
         ];
         if ($handler !== null) {
             $config['handler'] = $handler;

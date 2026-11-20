@@ -21,11 +21,21 @@ final class ConnectionConfig
         public readonly string $baseUrl,
         public readonly string $apiKey,
         public readonly int $timeout = 30,
+        /**
+         * Dolibarr entity (Multicompany) the REST calls must work in, sent as
+         * the native DOLAPIENTITY header. Null sends no header: Dolibarr then
+         * works in the entity of the API key's user, as before 2.8.0. The host
+         * is responsible for checking that the user may work in this entity.
+         */
+        public readonly ?int $entity = null,
     ) {
         if (trim($this->baseUrl) === '' || trim($this->apiKey) === '') {
             throw new RuntimeException(
                 'ConnectionConfig requires a non-empty Dolibarr URL and API key.'
             );
+        }
+        if ($this->entity !== null && $this->entity < 1) {
+            throw new RuntimeException('ConnectionConfig entity must be a positive integer or null.');
         }
     }
 

@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.8.0
+
+- **Multicompany: the host can choose the Dolibarr entity of the REST calls.**
+  `ConnectionConfig` gains an optional `entity` argument (`?int`, default
+  `null`). When set, `DolibarrClient` and `ApiSchemaClient` send it as the
+  native `DOLAPIENTITY` header, so every tool reads and writes in that entity
+  with the user's rights there (a user shared between entities, Multicompany
+  transverse mode, could only work in their main entity). `null` sends no
+  header: strictly the behaviour of 2.7.0. Dolibarr does not check the user's
+  access to that entity as such; it applies the user's rights there (none
+  without a user group of the entity, transverse mode), so the host should
+  check the access first to refuse clearly. First user: emMCP 1.11.0.
+- `ApiSchemaClient` accepts an optional Guzzle handler, like `DolibarrClient`
+  (tests).
+
 ## 2.7.0
 
 - **`dolibarr_add_time_spent` no longer reports a success that did not
